@@ -400,9 +400,15 @@ def review_documents(file_paths: List[str], company_name: str) -> Dict[str, Any]
         
         # Append the analysis directly to the results list
         results.append(analysis)
+    
+    print("company name: ", company_name)
+    print("document types: ", document_types)
+    print("po analysis: ", po_analysis)
+    print("clause analysis: ", results)
 
     return {
-        "document_types": document_types,
-        "po_analysis": po_analysis,
-        "clause_analysis": results
+        'company_name': company_name,
+        'document_types': document_types,
+        'po_analysis': po_analysis,
+        'clause_analysis': results
     }

@@ -2,7 +2,7 @@ import os
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                              QListWidget, QPushButton, QLabel, QSizePolicy,
                              QFileDialog, QLineEdit, QMessageBox, QListWidgetItem,
-                             QTextEdit)
+                             QTextEdit, QComboBox)
 from PyQt5.QtCore import Qt, QMimeData
 from PyQt5.QtGui import QDragEnterEvent, QDropEvent
 from dotenv import load_dotenv
@@ -54,6 +54,12 @@ class MainWindow(QMainWindow):
         self.review_button = QPushButton("Review All Jobs")
         self.review_button.clicked.connect(self.review_all_jobs)
         
+        # Add a QComboBox for job selection
+        self.job_selector = QComboBox()
+        self.job_selector.currentIndexChanged.connect(self.update_results_display)
+        middle_layout.addWidget(QLabel("Select Job:"))
+        middle_layout.addWidget(self.job_selector)
+        
         middle_layout.addWidget(QLabel("Jobs:"))
         middle_layout.addWidget(self.job_list)
         middle_layout.addWidget(QLabel("Company Name:"))
@@ -73,6 +79,7 @@ class MainWindow(QMainWindow):
         
         self.files = []
         self.jobs = {}
+        self.review_results = {}  # Store review results for each job
 
     def dragEnterEvent(self, event: QDragEnterEvent):
         if event.mimeData().hasUrls():
@@ -119,9 +126,22 @@ class MainWindow(QMainWindow):
     
     def review_all_jobs(self):
         self.results_display.clear()
+        self.review_results.clear()
+        self.job_selector.clear()
+
         for company_name, file_paths in self.jobs.items():
             results = review_documents(file_paths, company_name)
-            self.results_display.display_results(results)
+            self.review_results[company_name] = results
+            self.job_selector.addItem(company_name)
+
+        if self.job_selector.count() > 0:
+            self.job_selector.setCurrentIndex(0)
+            self.update_results_display()
+
+    def update_results_display(self):
+        selected_job = self.job_selector.currentText()
+        if selected_job in self.review_results:
+            self.results_display.display_results(self.review_results[selected_job])
 
 from PyQt5.QtWidgets import QTextEdit, QVBoxLayout, QWidget
 
@@ -141,17 +161,17 @@ class ResultsDisplay(QWidget):
         self.text_edit.clear()
         html_content = """
         <style>
-            body { font-family: Arial, sans-serif; font-size: 11px; line-height: 1.6; }
-            h1 { color: #2c3e50; border-bottom: 2px solid #2c3e50; padding-bottom: 10px; }
-            h2 { color: #34495e; margin-top: 20px; }
-            .section { margin-bottom: 20px; }
-            .subsection { margin-left: 20px; }
-            .clause { font-weight: bold; color: #2980b9; }
-            .quote, .identifier, .requirement { margin-left: 20px; font-style: italic; color: #555; }
-            .identifiers { margin-left: 40px; text-indent: -20px; }
+            body {{ font-family: Arial, sans-serif; font-size: 11px; line-height: 1.6; }}
+            h1 {{ color: #2c3e50; border-bottom: 2px solid #2c3e50; padding-bottom: 10px; }}
+            h2 {{ color: #34495e; margin-top: 20px; }}
+            .section {{ margin-bottom: 20px; }}
+            .subsection {{ margin-left: 20px; }}
+            .clause {{ font-weight: bold; color: #2980b9; }}
+            .quote, .identifier, .requirement {{ margin-left: 20px; font-style: italic; color: #555; }}
+            .identifiers {{ margin-left: 40px; text-indent: -20px; }}
         </style>
-        <h1>Contract Review Results</h1>
-        """
+        <h1>Contract Review Results for {company}</h1>
+        """.format(company=results.get('company_name', 'Unknown Company'))
 
         # Purchase Order Analysis
         if results['po_analysis']:
