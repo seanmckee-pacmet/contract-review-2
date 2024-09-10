@@ -1,39 +1,23 @@
 import os
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                              QListWidget, QPushButton, QLabel, QSizePolicy,
-                             QFileDialog, QLineEdit, QMessageBox, QListWidgetItem)
+                             QFileDialog, QLineEdit, QMessageBox, QListWidgetItem,
+                             QTextEdit)
 from PyQt5.QtCore import Qt, QMimeData
 from PyQt5.QtGui import QDragEnterEvent, QDropEvent
 from dotenv import load_dotenv
-from llama_parse import LlamaParse
-import openai
-import qdrant_client
+from src.review import review_documents
+from PyQt5.QtGui import QFont
 import json
-from src.review import final_review as perform_final_review
 
 # Load environment variables
 load_dotenv()
-
-# Set up LlamaParse
-parser = LlamaParse(
-    result_type="markdown",
-    api_key=os.getenv("LLAMA_CLOUD_API_KEY"),
-    model="gpt-4o-2024-08-06"
-)
-
-# Set up OpenAI client
-openai_client = openai.Client(api_key=os.getenv("OPENAI_API_KEY"))
-
-# Set up Qdrant client
-qdrant_client = qdrant_client.QdrantClient(":memory:")
-collection_name = "document-chunks"
-embedding_model = "text-embedding-3-small"
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Document Review App")
-        self.setGeometry(100, 100, 1000, 700)
+        self.setGeometry(100, 100, 1400, 800)  # Increased window width
         
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
@@ -58,8 +42,8 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(QLabel("Current Files:"))
         left_layout.addWidget(self.current_files)
         
-        # Right side: Job list, company name input, and buttons
-        right_layout = QVBoxLayout()
+        # Middle: Job list, company name input, and buttons
+        middle_layout = QVBoxLayout()
         self.job_list = QListWidget()
         
         self.company_name_input = QLineEdit()
@@ -67,18 +51,25 @@ class MainWindow(QMainWindow):
         
         self.add_job_button = QPushButton("Add Job")
         self.add_job_button.clicked.connect(self.add_job)
-        self.review_button = QPushButton("Final Review")
-        self.review_button.clicked.connect(self.final_review)
+        self.review_button = QPushButton("Review All Jobs")
+        self.review_button.clicked.connect(self.review_all_jobs)
         
-        right_layout.addWidget(QLabel("Jobs:"))
-        right_layout.addWidget(self.job_list)
-        right_layout.addWidget(QLabel("Company Name:"))
-        right_layout.addWidget(self.company_name_input)
-        right_layout.addWidget(self.add_job_button)
-        right_layout.addWidget(self.review_button)
+        middle_layout.addWidget(QLabel("Jobs:"))
+        middle_layout.addWidget(self.job_list)
+        middle_layout.addWidget(QLabel("Company Name:"))
+        middle_layout.addWidget(self.company_name_input)
+        middle_layout.addWidget(self.add_job_button)
+        middle_layout.addWidget(self.review_button)
+        
+        # Right side: Results display
+        right_layout = QVBoxLayout()
+        self.results_display = ResultsDisplay()
+        right_layout.addWidget(QLabel("Review Results:"))
+        right_layout.addWidget(self.results_display)
         
         self.layout.addLayout(left_layout, 2)
-        self.layout.addLayout(right_layout, 1)
+        self.layout.addLayout(middle_layout, 1)
+        self.layout.addLayout(right_layout, 3)  # Increased the stretch factor for the right layout
         
         self.files = []
         self.jobs = {}
@@ -111,12 +102,7 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, "Missing Company Name", "Please enter a company name before adding a job.")
                 return
             
-            file_count = self.current_files.count()
-            
-            if company_name in self.jobs:
-                self.jobs[company_name] += file_count
-            else:
-                self.jobs[company_name] = file_count
+            self.jobs[company_name] = self.files.copy()
             
             self.update_job_list()
 
@@ -128,20 +114,78 @@ class MainWindow(QMainWindow):
 
     def update_job_list(self):
         self.job_list.clear()
-        for company, file_count in self.jobs.items():
-            self.job_list.addItem(f"Job: {company} ({file_count} files)")
+        for company, files in self.jobs.items():
+            self.job_list.addItem(f"Job: {company} ({len(files)} files)")
     
-    def final_review(self):
-        print("Final review initiated")
-        results = perform_final_review(self.jobs, self.files)
-        self.display_results(results)
+    def review_all_jobs(self):
+        self.results_display.clear()
+        for company_name, file_paths in self.jobs.items():
+            results = review_documents(file_paths, company_name)
+            self.results_display.display_results(results)
+
+from PyQt5.QtWidgets import QTextEdit, QVBoxLayout, QWidget
+
+class ResultsDisplay(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.layout = QVBoxLayout(self)
+        self.text_edit = QTextEdit()
+        self.text_edit.setReadOnly(True)
+        self.text_edit.setFont(QFont("Arial", 11))
+        self.layout.addWidget(self.text_edit)
+
+    def clear(self):
+        self.text_edit.clear()
 
     def display_results(self, results):
-        print("Search Results:")
-        for clause_type, search_results in results.items():
-            print(f"\nClause Type: {clause_type}")
-            for result in search_results:
-                print(f"  Score: {result.score}")
-                print(f"  Company: {result.payload['company']}")
-                print(f"  File: {result.payload['file']}")
-                print(f"  Text: {result.payload['text'][:100]}...")  # Show first 100 characters
+        self.text_edit.clear()
+        html_content = """
+        <style>
+            body { font-family: Arial, sans-serif; font-size: 11px; line-height: 1.6; }
+            h1 { color: #2c3e50; border-bottom: 2px solid #2c3e50; padding-bottom: 10px; }
+            h2 { color: #34495e; margin-top: 20px; }
+            .section { margin-bottom: 20px; }
+            .subsection { margin-left: 20px; }
+            .file-path { color: #7f8c8d; font-style: italic; }
+            .clause { font-weight: bold; color: #2980b9; }
+            .invoked { font-weight: bold; }
+            .invoked-yes { color: #27ae60; }
+            .invoked-no { color: #c0392b; }
+            .quote { margin-left: 20px; font-style: italic; color: #555; }
+        </style>
+        <h1>Contract Review Results</h1>
+        """
+
+        # # Document Types
+        # html_content += "<div class='section'><h2>Document Types</h2>"
+        # for file_path, doc_type in results['document_types'].items():
+        #     html_content += f"<p><span class='file-path'>{file_path}</span>: {doc_type}</p>"
+        # html_content += "</div>"
+
+        # Purchase Order Analysis
+        if results['po_analysis']:
+            html_content += "<div class='section'><h2>Purchase Order Analysis</h2>"
+            po_data = json.loads(results['po_analysis'])
+            html_content += "<div class='subsection'><h3>Clause Identifiers:</h3><ul>"
+            html_content += "".join(f"<li>{clause}</li>" for clause in po_data['clause_identifiers'])
+            html_content += "</ul></div>"
+            html_content += "<div class='subsection'><h3>Requirements:</h3><ul>"
+            for req in po_data['requirements']:
+                html_content += f"<li>{req}</li>"
+            html_content += "</ul></div></div>"
+
+        # Clause Analysis
+        html_content += "<div class='section'><h2>Clause Analysis</h2>"
+        for clause in results['clause_analysis']:
+            html_content += f"<div class='subsection'><p class='clause'>{clause['clause']}</p>"
+            invoked_class = 'invoked-yes' if clause['invoked'] == 'Yes' else 'invoked-no'
+            html_content += f"<p><span class='invoked'>Invoked:</span> <span class='{invoked_class}'>{clause['invoked']}</span></p>"
+            if clause['invoked'] == 'Yes' and clause['quotes']:
+                html_content += "<p>Relevant Quotes:</p><ul>"
+                for quote in clause['quotes']:
+                    html_content += f"<li class='quote'><strong>{quote['clause']}:</strong> {quote['quote']}</li>"
+                html_content += "</ul>"
+            html_content += "</div>"
+        html_content += "</div>"
+
+        self.text_edit.setHtml(html_content)
