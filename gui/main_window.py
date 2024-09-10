@@ -146,46 +146,38 @@ class ResultsDisplay(QWidget):
             h2 { color: #34495e; margin-top: 20px; }
             .section { margin-bottom: 20px; }
             .subsection { margin-left: 20px; }
-            .file-path { color: #7f8c8d; font-style: italic; }
             .clause { font-weight: bold; color: #2980b9; }
-            .invoked { font-weight: bold; }
-            .invoked-yes { color: #27ae60; }
-            .invoked-no { color: #c0392b; }
-            .quote { margin-left: 20px; font-style: italic; color: #555; }
+            .quote, .identifier, .requirement { margin-left: 20px; font-style: italic; color: #555; }
+            .identifiers { margin-left: 40px; text-indent: -20px; }
         </style>
         <h1>Contract Review Results</h1>
         """
-
-        # # Document Types
-        # html_content += "<div class='section'><h2>Document Types</h2>"
-        # for file_path, doc_type in results['document_types'].items():
-        #     html_content += f"<p><span class='file-path'>{file_path}</span>: {doc_type}</p>"
-        # html_content += "</div>"
 
         # Purchase Order Analysis
         if results['po_analysis']:
             html_content += "<div class='section'><h2>Purchase Order Analysis</h2>"
             po_data = json.loads(results['po_analysis'])
-            html_content += "<div class='subsection'><h3>Clause Identifiers:</h3><ul>"
-            html_content += "".join(f"<li>{clause}</li>" for clause in po_data['clause_identifiers'])
-            html_content += "</ul></div>"
-            html_content += "<div class='subsection'><h3>Requirements:</h3><ul>"
+            html_content += "<div class='subsection'><h3 class='clause'>Clause Identifiers:</h3>"
+            html_content += "<p class='identifiers'>"
+            identifiers = po_data['clause_identifiers']
+            html_content += ", ".join(f"<span class='identifier'>{identifier}</span>" for identifier in identifiers)
+            html_content += "</p></div>"
+            html_content += "<div class='subsection'><h3 class='clause'>Requirements:</h3><ul>"
             for req in po_data['requirements']:
-                html_content += f"<li>{req}</li>"
+                html_content += f"<li><span class='requirement'>{req}</span></li>"
             html_content += "</ul></div></div>"
 
         # Clause Analysis
-        html_content += "<div class='section'><h2>Clause Analysis</h2>"
+        html_content += "<div class='section'><h2>Invoked Clauses</h2>"
         for clause in results['clause_analysis']:
-            html_content += f"<div class='subsection'><p class='clause'>{clause['clause']}</p>"
-            invoked_class = 'invoked-yes' if clause['invoked'] == 'Yes' else 'invoked-no'
-            html_content += f"<p><span class='invoked'>Invoked:</span> <span class='{invoked_class}'>{clause['invoked']}</span></p>"
-            if clause['invoked'] == 'Yes' and clause['quotes']:
-                html_content += "<p>Relevant Quotes:</p><ul>"
-                for quote in clause['quotes']:
-                    html_content += f"<li class='quote'><strong>{quote['clause']}:</strong> {quote['quote']}</li>"
-                html_content += "</ul>"
-            html_content += "</div>"
+            if clause['invoked'] == 'Yes':
+                html_content += f"<div class='subsection'><p class='clause'>{clause['clause']}</p>"
+                if clause['quotes']:
+                    html_content += "<ul>"
+                    for quote in clause['quotes']:
+                        html_content += f"<li class='quote'><strong>{quote['clause']}:</strong> {quote['quote']}</li>"
+                    html_content += "</ul>"
+                html_content += "</div>"
         html_content += "</div>"
 
         self.text_edit.setHtml(html_content)
