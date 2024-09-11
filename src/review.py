@@ -10,6 +10,7 @@ import time
 from qdrant_client import QdrantClient
 import traceback
 from src.get_formatted_text import get_formatted_text, parse_document
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 # Load environment variables
 load_dotenv()
@@ -79,7 +80,17 @@ def initialize_qdrant(collection_name: str, vector_size: int):
         )
     return client
 
-# Add this function to store embeddings in Qdrant
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
+def upsert_with_retry(client, collection_name, batch):
+    try:
+        client.upsert(
+            collection_name=collection_name,
+            points=batch
+        )
+    except Exception as e:
+        print(f"Error during upsert: {str(e)}")
+        raise
+
 def store_embeddings_in_qdrant(client: QdrantClient, collection_name: str, chunks: List[Dict], embeddings: List[List[float]]):
     points = []
     for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
@@ -96,11 +107,12 @@ def store_embeddings_in_qdrant(client: QdrantClient, collection_name: str, chunk
     batch_size = 100
     for i in range(0, len(points), batch_size):
         batch = points[i:i+batch_size]
-        client.upsert(
-            collection_name=collection_name,
-            points=batch
-        )
-        print(f"Uploaded batch {i//batch_size + 1} of {(len(points)-1)//batch_size + 1}")
+        try:
+            upsert_with_retry(client, collection_name, batch)
+            print(f"Uploaded batch {i//batch_size + 1} of {(len(points)-1)//batch_size + 1}")
+        except Exception as e:
+            print(f"Failed to upload batch {i//batch_size + 1} after multiple retries: {str(e)}")
+            # You might want to implement some error handling or logging here
 
 # Add these functions to load notable clauses and query Qdrant for clauses
 def load_notable_clauses() -> Dict[str, str]:
