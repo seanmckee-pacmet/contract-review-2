@@ -1,10 +1,14 @@
+from pydantic import BaseModel
+from typing import List, Dict, Optional
+from openai import OpenAI
+
 import os
 from dotenv import load_dotenv
 from openai import OpenAI
 import qdrant_client
 from qdrant_client.models import VectorParams, Distance, PointStruct
 import json
-from langchain_text_splitters import MarkdownHeaderTextSplitter
+from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
 from typing import List, Dict, Tuple, Any
 import time
 from qdrant_client import QdrantClient
@@ -33,11 +37,33 @@ def chunk_markdown_text(markdown_text):
         ("####", "Header 4"),
     ]
     splitter = MarkdownHeaderTextSplitter(headers_to_split_on=headers_to_split_on)
-    chunks = splitter.split_text(markdown_text)
-    return chunks
+    initial_chunks = splitter.split_text(markdown_text)
 
-pdf_path = "C:\\Users\\smckee\\Documents\\Test Contracts\\Incora\\Supplier-Quality-Flow-Down-Requirements-1.pdf"
-tiff_path = "C:\\Users\\smckee\\Documents\\Test Contracts\\Incora\\Customer Contract_72250.tif"
+    # Initialize RecursiveCharacterTextSplitter for further splitting
+    sub_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=1000,
+        chunk_overlap=100,
+        length_function=len,
+    )
+
+    final_chunks = []
+    for chunk in initial_chunks:
+        if len(chunk.page_content) > 1000:
+            # Split the chunk further
+            sub_chunks = sub_splitter.split_text(chunk.page_content)
+            for sub_chunk in sub_chunks:
+                final_chunks.append({
+                    "page_content": sub_chunk,
+                    "metadata": chunk.metadata  # Maintain the original metadata
+                })
+        else:
+            final_chunks.append({
+                "page_content": chunk.page_content,
+                "metadata": chunk.metadata
+            })
+
+    return final_chunks
+
 
 # Add this new function to create embeddings
 def create_embeddings(chunks: List[Dict], batch_size: int = 100) -> List[List[float]]:
@@ -119,37 +145,63 @@ def load_notable_clauses() -> Dict[str, str]:
     with open('notable_clauses.json', 'r') as f:
         return json.load(f)
 
-def query_qdrant_for_clauses(client: QdrantClient, collection_name: str, query: str, top_k: int = 3) -> List[Dict]:
+def query_qdrant_for_clauses(client: QdrantClient, collection_name: str, query: str, top_k: int = 10) -> List[Dict]:
     query_vector = openai_client.embeddings.create(input=query, model=embedding_model_name).data[0].embedding
     search_result = client.search(
         collection_name=collection_name,
         query_vector=query_vector,
         limit=top_k
     )
-    return [{"score": hit.score, "content": hit.payload["content"], "metadata": hit.payload["metadata"]} for hit in search_result]
+    return [
+        {
+            "score": hit.score, 
+            "content": hit.payload["content"], 
+            "metadata": hit.payload["metadata"],
+            "document_type": hit.payload["metadata"]["document_type"]
+        } 
+        for hit in search_result
+    ]
+
+# Define Pydantic models for responses
+class POAnalysisResponse(BaseModel):
+    all_invoked: bool
+    clause_identifiers: List[str]
+    requirements: List[str]
+
+class DocumentTypeResponse(BaseModel):
+    document_type: str
+
+class ClauseSimilarityResponse(BaseModel):
+    is_similar: bool
+
+class Quote(BaseModel):
+    clause: str
+    quote: str
+    document_type: str
+
+class ClauseAnalysisResponse(BaseModel):
+    clause: str
+    invoked: str
+    quotes: List[Quote]
 
 # scan Tiff file which is the purchase order and use open ai to determine if there are specific clauses invoked from quality document or if there are any notable clauses
 # params: po_markdown - markdown from the tiff file
 def review_po(po_markdown):
-    # put markdown into open ai and ask if there are specific clauses invoked from quality document
-    response = openai_client.chat.completions.create(
+    response = openai_client.beta.chat.completions.parse(
         model="gpt-4o-2024-08-06",
-        response_format={ "type": "json_object" },
         messages=[
             {"role": "system", "content": "You are a legal expert analyzing contract clauses."},
             {"role": "user", "content": '''
              Analyse this purchase order carefully and determine the following:
-             1. If there are specific clause identifiers for the quality document that are invoked in this purchase order.
-                a) or if the entire quality document is invoked in this purchase order.
-             2. If there are any requirements the make note of on the purchase order.
+             1. If the entire quality document is invoked in this purchase order.
+             2. If not, identify specific clause identifiers for the quality document that are invoked.
+             3. Any other requirements noted on the purchase order.
 
-             Response Format (json):
-             {
-                "clause_identifiers": [list of clause identifiers],
-                "requirements": [list of requirements]
-             }
+             Correct any OCR errors in clause identifiers as previously instructed.
+             
+             Only Respond with the json and no other text or else I will get an error
 
-             This json is going to be accessed by another function so please format it accordingly and include no other text but the json.
+              This json is going to be accessed by another function so please format it accordingly and include no other text but the json.
              Correct the following OCR-extracted text for invoked clauses. The OCR may introduce errors and misread characters. Use patterns to correct the text by identifying similarities with other clauses near the error. Additionally, if any ranges are listed (e.g., "1-7"), expand the range to list each clause individually. Clauses and ranges can be formatted in any way, such as numeric, alphanumeric, or with mixed patterns. Make sure to infer patterns from nearby clauses if necessary to fix OCR errors.
 
                 Examples:
@@ -183,47 +235,68 @@ def review_po(po_markdown):
                 Use nearby clause patterns where necessary to correct OCR errors, ensuring that all ranges are expanded.
              
                 Only Respond with the json and no other text or else I will get an error
+             
              Purchase Order:
-             ''' + po_markdown
-             }
-        ]
+             ''' + po_markdown}
+        ],
+        response_format=POAnalysisResponse,
     )
-    return response.choices[0].message.content
+    
+    return response.choices[0].message.parsed
 
 # determine the type of each document (po/tc/qc)
 def determine_document_type(text: str) -> str:
-    # Take the first 2000 characters of the text
     sample = text[:2000]
-
-    # Prepare the prompt for OpenAI
     prompt = f"""
     Analyze the following text and determine if it is a Purchase Order, Quality Document, or Terms and Conditions.
     Respond with only one of these three options or "Unknown" if you can't determine.
-    Response options: Purchase Order, Quality Document, Terms and Conditions, Unknown
-    Only respond with that text and nothing else or else I will get an error
     
     Text sample:
     {sample}
     """
 
-    # Call OpenAI for analysis
-    response = openai_client.chat.completions.create(
-        model="gpt-4o-2024-08-06",  # or your preferred model
+    response = openai_client.beta.chat.completions.parse(
+        model="gpt-4o-2024-08-06",
         messages=[
             {"role": "system", "content": "You are an expert at identifying document types."},
             {"role": "user", "content": prompt}
         ],
-        max_tokens=10  # Limit the response to a short answer
+        response_format=DocumentTypeResponse,
     )
 
-    # Extract the document type from the response
-    document_type = response.choices[0].message.content.strip()
+    return response.choices[0].message.parsed.document_type
 
-    # Validate the response
-    valid_types = ["Purchase Order", "Quality Document", "Terms and Conditions", "Unknown"]
-    return document_type if document_type in valid_types else "Unknown"
+def is_clause_similar(clause, invoked_clauses):
+    if not invoked_clauses:
+        return False
+    
+    prompt = f"""
+    Compare the following clause identifier with the list of invoked clauses:
+    
+    Clause to check: {clause}
+    
+    Invoked clauses:
+    {json.dumps(invoked_clauses, indent=2)}
+    
+    Is the clause to check similar to any of the invoked clauses? Consider variations in naming, formatting, or abbreviations.
+    """
+    
+    response = openai_client.beta.chat.completions.parse(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": "You are an expert in comparing legal clause identifiers."},
+            {"role": "user", "content": prompt}
+        ],
+        response_format=ClauseSimilarityResponse,
+    )
+    
+    return response.choices[0].message.parsed.is_similar
 
-# Add this function to review documents
+def is_clause_invoked(clause, invoked_clauses, all_invoked):
+    if all_invoked:
+        return True
+    return any(invoked.strip().upper() == clause.strip().upper() for invoked in invoked_clauses)
+
 def review_documents(file_paths: List[str], company_name: str) -> Dict[str, Any]:
     # Initialize Qdrant client
     collection_name = f"{company_name}_documents"
@@ -234,6 +307,9 @@ def review_documents(file_paths: List[str], company_name: str) -> Dict[str, Any]
     all_embeddings = []
     document_types = {}
     po_analysis = None
+    invoked_clauses = []
+    all_invoked = False
+    tc_content = ""
 
     # Process each document
     for file_path in file_paths:
@@ -251,15 +327,21 @@ def review_documents(file_paths: List[str], company_name: str) -> Dict[str, Any]
                 po_analysis = review_po(content)
                 print("Purchase Order Analysis:")
                 print(po_analysis)
+                
+                all_invoked = po_analysis.all_invoked
+                invoked_clauses = po_analysis.clause_identifiers
+            elif doc_type == "Terms and Conditions":
+                tc_content = content
             
             chunks = chunk_markdown_text(content)
             
-            # Convert Document objects to dictionaries
-            chunk_dicts = [{"page_content": chunk.page_content, "metadata": chunk.metadata} for chunk in chunks]
+            # Add document type to metadata
+            for chunk in chunks:
+                chunk['metadata']['document_type'] = doc_type
             
-            embeddings = create_embeddings(chunk_dicts)
+            embeddings = create_embeddings(chunks)
             
-            all_chunks.extend(chunk_dicts)
+            all_chunks.extend(chunks)
             all_embeddings.extend(embeddings)
             
             print(f"Processed {file_path}: {len(chunks)} chunks created")
@@ -276,7 +358,9 @@ def review_documents(file_paths: List[str], company_name: str) -> Dict[str, Any]
     results = []
 
     for clause, description in notable_clauses.items():
+        print(f"\nAnalyzing clause: {clause}")
         clause_results = query_qdrant_for_clauses(qdrant_client, collection_name, clause)
+        print(f"Found {len(clause_results)} relevant text chunks")
         
         # Prepare the prompt for OpenAI
         prompt = f"""
@@ -286,14 +370,29 @@ def review_documents(file_paths: List[str], company_name: str) -> Dict[str, Any]
         Relevant text chunks:
         {json.dumps(clause_results, indent=2)}
         
-        Based on the above information, is this clause invoked in the document? 
-        Analyze the clause and return a JSON object with the following structure:
+        Purchase Order Analysis:
+        All clauses invoked: {po_analysis.all_invoked}
+        Specific clauses invoked: {json.dumps(po_analysis.clause_identifiers)}
+        
+        Based on the above information, analyze this clause with the following instructions:
+        1. If 'All clauses invoked' is True, analyze this clause for all document types.
+        2. If 'All clauses invoked' is False:
+           a. For Quality Control (QC) documents: only analyze this clause if it exactly matches (ignoring case) one of the 'Specific clauses invoked'.
+           
+           b. For Terms and Conditions (TC) documents: always analyze this clause.
+           c. For Purchase Order (PO) documents: always analyze this clause.
+        3. When including quotes, only use quotes from the appropriate document type based on the above rules.
+        4. Always include the document type for each quote.
+        
+        If the clause should not be analyzed based on these criteria, respond with {{"invoked": "No", "quotes": []}}.
+        
+        If the clause should be analyzed, determine if it's invoked in the document and return a JSON object with the following structure:
         {{
             "clause": "{clause}",
             "invoked": "Yes/No",
             "quotes": [
-                {{"clause": "Clause ID", "quote": "Quote Text"}},
-                {{"clause": "Clause ID", "quote": "Quote Text"}},
+                {{"clause": "Clause ID", "quote": "Quote Text", "document_type": "Document Type"}},
+                {{"clause": "Clause ID", "quote": "Quote Text", "document_type": "Document Type"}},
                 ...
             ]
         }}
@@ -301,29 +400,41 @@ def review_documents(file_paths: List[str], company_name: str) -> Dict[str, Any]
         Note: Only include quotes if the clause is invoked. If not invoked, return an empty list for quotes.
         """
         
+        print("Sending prompt to OpenAI for analysis")
         # Call OpenAI for analysis
-        response = openai.chat.completions.create(
-            model="gpt-4o-mini",
-            response_format={ "type": "json_object" },
+        response = openai_client.beta.chat.completions.parse(
+            model="gpt-4o-2024-08-06",
             messages=[
                 {"role": "system", "content": "You are a legal expert analyzing contract clauses."},
                 {"role": "user", "content": prompt}
-            ]
+            ],
+            response_format=ClauseAnalysisResponse,
         )
         
-        analysis = json.loads(response.choices[0].message.content)
-        
-        # Append the analysis directly to the results list
-        results.append(analysis)
-    
+        analysis = response.choices[0].message.parsed
+        if analysis.invoked == 'Yes':
+            results.append(analysis.model_dump())
+            print(f"Clause {clause} is invoked. Added to results.")
+        else:
+            print(f"Clause {clause} is not invoked. Skipped.")
+
+    print("\nFinal results:")
     print("company name: ", company_name)
     print("document types: ", document_types)
     print("po analysis: ", po_analysis)
-    print("clause analysis: ", results)
+    print("clause analysis:")
+    for result in results:
+        print(f"\nClause: {result['clause']}")
+        print(f"Invoked: {result['invoked']}")
+        if result['invoked'] == 'Yes':
+            for quote in result['quotes']:
+                print(f"- Document Type: {quote['document_type']}")
+                print(f"  Clause ID: {quote['clause']}")
+                print(f"  Quote: {quote['quote']}")
 
     return {
         'company_name': company_name,
         'document_types': document_types,
-        'po_analysis': po_analysis,
+        'po_analysis': po_analysis.model_dump(),  # Use model_dump instead of dict
         'clause_analysis': results
     }

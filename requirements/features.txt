@@ -1,0 +1,49 @@
+Project Idea:
+    - An application that allows you to upload a purchase order and its supporting documents, and review it for clauses specified by the user
+    - Uses python, llama parse, llama index, qdrant, openai, and langchain
+
+Features:
+    - Upload a purchase order and its supporting documents
+    - group those documents into 'jobs' which are collections of documents that are related by company
+        - you can have multiple jobs queued up to run in series or in parallel
+    - when a job is ran it follows the following process:
+        1. text is extracted from the documents
+        2. the text is parsed by llama parse into markdown
+        3. the markdown is converted into chunks of text
+        4. the chunks of text are embedded into a vector space by openai
+        5. the chunks of text are stored in qdrant
+        6. the chunks of text are then queried
+        7. the chunks of text are returned 
+        8. open ai decides which clauses are relevant to the given notable clauses
+        9. A report is generated with information from PO scan and relevant clauses
+    - the user can specify clauses that they want to review (right now in notable_clauses.json)
+    - the application will review the purchase order and its supporting documents for the specified clauses
+    - the application will return a report on the purchase order and its supporting documents for the specified clauses
+
+
+File Structure:
+CONTRACT-REVIEW-2
+├── gui
+│   ├── __pycache__
+│   ├── main_window.py
+│   ├── po_extractor.py
+│   └── tabbed_interface.py
+├── requirements
+│   └── features.txt
+├── src
+│   ├── __pycache__
+│   ├── get_formatted_text.py
+│   ├── po_extract.py
+│   └── review.py
+├── venv
+├── .env
+├── .gitignore
+├── chunking_results.txt
+├── example.py
+├── main.py
+├── notable_clauses.json
+└── README.md
+
+- gui components should go into the gui folder
+- any logic should go into the src folder
+- you will mostly be adding files/code to the gui and src folder

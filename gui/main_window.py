@@ -143,6 +143,32 @@ class MainWindow(QMainWindow):
         if selected_job in self.review_results:
             self.results_display.display_results(self.review_results[selected_job])
 
+    def display_review(self, review_data):
+        self.review_text.clear()
+        self.review_text.append(f"Company: {review_data['company_name']}")
+        self.review_text.append("\nDocument Types:")
+        for file, doc_type in review_data['document_types'].items():
+            self.review_text.append(f"- {file}: {doc_type}")
+
+        self.review_text.append("\nPurchase Order Analysis:")
+        po_analysis = review_data['po_analysis']
+        self.review_text.append(f"All clauses invoked: {po_analysis['all_invoked']}")
+        self.review_text.append("Specific clauses invoked:")
+        for clause in po_analysis['clause_identifiers']:
+            self.review_text.append(f"- {clause}")
+
+        self.review_text.append("\nClause Analysis:")
+        for clause_analysis in review_data['clause_analysis']:
+            self.review_text.append(f"\nClause: {clause_analysis['clause']}")
+            self.review_text.append(f"Invoked: {clause_analysis['invoked']}")
+            if clause_analysis['invoked'] == 'Yes':
+                for quote in clause_analysis['quotes']:
+                    self.review_text.append(f"- Document Type: {quote['document_type']}")
+                    self.review_text.append(f"  Clause ID: {quote['clause']}")
+                    self.review_text.append(f"  Quote: {quote['quote']}")
+
+        self.review_text.moveCursor(QTextCursor.Start)
+
 from PyQt5.QtWidgets import QTextEdit, QVBoxLayout, QWidget
 
 class ResultsDisplay(QWidget):
@@ -158,7 +184,7 @@ class ResultsDisplay(QWidget):
         self.text_edit.clear()
 
     def display_results(self, results):
-        self.text_edit.clear()
+        po_data = results['po_analysis']  # Remove json.loads()
         html_content = """
         <style>
             body {{ font-family: Arial, sans-serif; font-size: 11px; line-height: 1.6; }}
@@ -176,7 +202,7 @@ class ResultsDisplay(QWidget):
         # Purchase Order Analysis
         if results['po_analysis']:
             html_content += "<div class='section'><h2>Purchase Order Analysis</h2>"
-            po_data = json.loads(results['po_analysis'])
+            po_data = results['po_analysis']
             html_content += "<div class='subsection'><h3 class='clause'>Clause Identifiers:</h3>"
             html_content += "<p class='identifiers'>"
             identifiers = po_data['clause_identifiers']
