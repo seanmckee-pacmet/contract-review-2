@@ -1,7 +1,7 @@
 import os
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QPushButton, QLabel, 
                              QSizePolicy, QFileDialog, QLineEdit, QMessageBox, QComboBox, QTextEdit,
-                             QApplication)
+                             QApplication, QMainWindow)
 from PyQt5.QtCore import Qt, QMimeData, QTimer, QThread, pyqtSignal
 from PyQt5.QtGui import QDragEnterEvent, QDropEvent, QColor, QFont, QPainter
 from src.review import review_documents
@@ -331,6 +331,6 @@ if __name__ == "__main__":
     main_widget = MainWindow()
     window.setCentralWidget(main_widget)
     window.setGeometry(100, 100, 1600, 900)
-    window.setWindowTitle("Document Review App")
+    window.setWindowTitle("Contract Review")
     window.show()
     app.exec_()

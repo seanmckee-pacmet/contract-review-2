@@ -1,34 +1,62 @@
-from pydantic import BaseModel
-from typing import List, Dict, Optional
-from openai import OpenAI
-
 import os
 from dotenv import load_dotenv
 from openai import OpenAI
-import qdrant_client
+from qdrant_client import QdrantClient
 from qdrant_client.models import VectorParams, Distance, PointStruct
 import json
 from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
 from typing import List, Dict, Tuple, Any
 import time
-from qdrant_client import QdrantClient
 import traceback
 from src.get_formatted_text import get_formatted_text, parse_document
 from tenacity import retry, stop_after_attempt, wait_exponential
+import concurrent.futures
+from pydantic import BaseModel
+import functools
 
 # Load environment variables
 load_dotenv()
 
-# set up OpenAI client
+# Set up OpenAI client
 openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# The embedding model name (to be used when making embedding calls)
+# The embedding model name
 embedding_model_name = "text-embedding-3-small"
 
-#connect to LLM
-openai = OpenAI()
+# Pydantic models for responses
+class POAnalysisResponse(BaseModel):
+    all_invoked: bool
+    clause_identifiers: List[str]
+    requirements: List[str]
 
-# chunk markdown text by '#' indentifier using langchian markdown header splitter
+class DocumentTypeResponse(BaseModel):
+    document_type: str
+
+class ClauseSimilarityResponse(BaseModel):
+    is_similar: bool
+
+class Quote(BaseModel):
+    clause: str
+    quote: str
+    document_type: str
+
+class ClauseAnalysisResponse(BaseModel):
+    clause: str
+    invoked: str
+    quotes: List[Quote]
+
+# Caching decorator
+def memoize(func):
+    cache = {}
+    @functools.wraps(func)
+    def memoized_func(*args, **kwargs):
+        key = str(args) + str(kwargs)
+        if key not in cache:
+            cache[key] = func(*args, **kwargs)
+        return cache[key]
+    return memoized_func
+
+@memoize
 def chunk_markdown_text(markdown_text):
     headers_to_split_on = [
         ("#", "Header 1"),
@@ -39,7 +67,6 @@ def chunk_markdown_text(markdown_text):
     splitter = MarkdownHeaderTextSplitter(headers_to_split_on=headers_to_split_on)
     initial_chunks = splitter.split_text(markdown_text)
 
-    # Initialize RecursiveCharacterTextSplitter for further splitting
     sub_splitter = RecursiveCharacterTextSplitter(
         chunk_size=1000,
         chunk_overlap=100,
@@ -49,12 +76,11 @@ def chunk_markdown_text(markdown_text):
     final_chunks = []
     for chunk in initial_chunks:
         if len(chunk.page_content) > 1000:
-            # Split the chunk further
             sub_chunks = sub_splitter.split_text(chunk.page_content)
             for sub_chunk in sub_chunks:
                 final_chunks.append({
                     "page_content": sub_chunk,
-                    "metadata": chunk.metadata  # Maintain the original metadata
+                    "metadata": chunk.metadata
                 })
         else:
             final_chunks.append({
@@ -64,8 +90,7 @@ def chunk_markdown_text(markdown_text):
 
     return final_chunks
 
-
-# Add this new function to create embeddings
+@memoize
 def create_embeddings(chunks: List[Dict], batch_size: int = 100) -> List[List[float]]:
     all_embeddings = []
     for i in range(0, len(chunks), batch_size):
@@ -82,22 +107,18 @@ def create_embeddings(chunks: List[Dict], batch_size: int = 100) -> List[List[fl
             
             print(f"Processed batch {i//batch_size + 1} of {(len(chunks)-1)//batch_size + 1}")
             
-            # Add a small delay to avoid hitting rate limits
             time.sleep(1)
         except Exception as e:
             print(f"Error processing batch {i//batch_size + 1}: {str(e)}")
-            # You might want to implement retry logic here
     
     return all_embeddings
 
-# Add this function to initialize Qdrant client and create collection
 def initialize_qdrant(collection_name: str, vector_size: int):
     client = QdrantClient(
-    url="https://50238ac6-e670-42be-933e-c836f812c16e.europe-west3-0.gcp.cloud.qdrant.io", 
-    api_key=os.getenv("QDRANT_API_KEY"),
-)
+        url="https://50238ac6-e670-42be-933e-c836f812c16e.europe-west3-0.gcp.cloud.qdrant.io", 
+        api_key=os.getenv("QDRANT_API_KEY"),
+    )
     
-    # Check if collection exists, if not create it
     collections = client.get_collections().collections
     if not any(collection.name == collection_name for collection in collections):
         client.create_collection(
@@ -129,7 +150,6 @@ def store_embeddings_in_qdrant(client: QdrantClient, collection_name: str, chunk
             }
         ))
     
-    # Upsert points in batches
     batch_size = 100
     for i in range(0, len(points), batch_size):
         batch = points[i:i+batch_size]
@@ -138,9 +158,8 @@ def store_embeddings_in_qdrant(client: QdrantClient, collection_name: str, chunk
             print(f"Uploaded batch {i//batch_size + 1} of {(len(points)-1)//batch_size + 1}")
         except Exception as e:
             print(f"Failed to upload batch {i//batch_size + 1} after multiple retries: {str(e)}")
-            # You might want to implement some error handling or logging here
 
-# Add these functions to load notable clauses and query Qdrant for clauses
+@memoize
 def load_notable_clauses() -> Dict[str, str]:
     with open('notable_clauses.json', 'r') as f:
         return json.load(f)
@@ -162,36 +181,71 @@ def query_qdrant_for_clauses(client: QdrantClient, collection_name: str, query: 
         for hit in search_result
     ]
 
-# Define Pydantic models for responses
-class POAnalysisResponse(BaseModel):
-    all_invoked: bool
-    clause_identifiers: List[str]
-    requirements: List[str]
-
-class DocumentTypeResponse(BaseModel):
-    document_type: str
-
-class ClauseSimilarityResponse(BaseModel):
-    is_similar: bool
-
-class Quote(BaseModel):
-    clause: str
-    quote: str
-    document_type: str
-
-class ClauseAnalysisResponse(BaseModel):
-    clause: str
-    invoked: str
-    quotes: List[Quote]
-
-
-def review_po(po_markdown):
+def is_clause_similar(clause, invoked_clauses):
+    if not invoked_clauses:
+        return False
+    
+    prompt = f"""
+    Compare the following clause identifier with the list of invoked clauses:
+    
+    Clause to check: {clause}
+    
+    Invoked clauses:
+    {json.dumps(invoked_clauses, indent=2)}
+    
+    Is the clause to check similar to any of the invoked clauses? Consider variations in naming, formatting, or abbreviations.
+    """
+    
     response = openai_client.beta.chat.completions.parse(
         model="gpt-4o-2024-08-06",
         messages=[
-            {"role": "system", "content": "You are a legal expert analyzing contract clauses."},
-            {"role": "user", "content": '''
-             Analyse this purchase order carefully and determine the following:
+            {"role": "system", "content": "You are an expert in comparing legal clause identifiers."},
+            {"role": "user", "content": prompt}
+        ],
+        response_format=ClauseSimilarityResponse
+    )
+    
+    return response.choices[0].message.parsed.is_similar
+
+def is_clause_invoked(clause, invoked_clauses, all_invoked):
+    if all_invoked:
+        return True
+    return any(
+        invoked.strip().upper() == clause.strip().upper() or
+        (invoked.strip().upper() in clause.strip().upper() and len(invoked) > 3)
+        for invoked in invoked_clauses
+    )
+
+def clear_qdrant_database(client: QdrantClient, collection_name: str):
+    try:
+        client.delete_collection(collection_name=collection_name)
+        print(f"Qdrant collection '{collection_name}' has been deleted successfully.")
+    except Exception as e:
+        print(f"Error clearing Qdrant collection '{collection_name}': {str(e)}")
+
+def determine_document_type(content: str) -> str:
+    prompt = f"""
+    Analyze the following text and determine if it is a Purchase Order, Quality Document, or Terms and Conditions.
+    Respond with only one of these three options or "Unknown" if you can't determine.
+    
+    Text sample:
+    {content[:2000]}  # Using the first 2000 characters as a sample
+    """
+
+    response = openai_client.beta.chat.completions.parse(
+        model="gpt-4o-2024-08-06",
+        messages=[
+            {"role": "system", "content": "You are an expert at identifying document types."},
+            {"role": "user", "content": prompt}
+        ],
+        response_format=DocumentTypeResponse
+    )
+
+    return response.choices[0].message.parsed.document_type
+
+def review_po(content: str) -> POAnalysisResponse:
+    prompt = f"""
+    Analyse this purchase order carefully and determine the following:
              1. If the entire quality document is invoked in this purchase order.
              2. If not, identify specific clause identifiers for the quality document that are invoked.
              3. Any other requirements noted on the purchase order.
@@ -234,81 +288,53 @@ def review_po(po_markdown):
                 Use nearby clause patterns where necessary to correct OCR errors, ensuring that all ranges are expanded.
              
                 Only Respond with the json and no other text or else I will get an error
-             
-             Purchase Order:
-             ''' + po_markdown}
-        ],
-        response_format=POAnalysisResponse
-    )
-    
-    return response.choices[0].message.parsed
 
-# determine the type of each document (po/tc/qc)
-def determine_document_type(text: str) -> str:
-    sample = text[:2000]
-    prompt = f"""
-    Analyze the following text and determine if it is a Purchase Order, Quality Document, or Terms and Conditions.
-    Respond with only one of these three options or "Unknown" if you can't determine.
-    
-    Text sample:
-    {sample}
+    Purchase Order:
+    {content[:4000]}  # Using the first 4000 characters as a sample
     """
 
     response = openai_client.beta.chat.completions.parse(
         model="gpt-4o-2024-08-06",
         messages=[
-            {"role": "system", "content": "You are an expert at identifying document types."},
+            {"role": "system", "content": "You are a legal expert analyzing contract clauses."},
             {"role": "user", "content": prompt}
         ],
-        response_format=DocumentTypeResponse
+        response_format=POAnalysisResponse
     )
 
-    return response.choices[0].message.parsed.document_type
+    return response.choices[0].message.parsed
 
-def is_clause_similar(clause, invoked_clauses):
-    if not invoked_clauses:
-        return False
-    
-    prompt = f"""
-    Compare the following clause identifier with the list of invoked clauses:
-    
-    Clause to check: {clause}
-    
-    Invoked clauses:
-    {json.dumps(invoked_clauses, indent=2)}
-    
-    Is the clause to check similar to any of the invoked clauses? Consider variations in naming, formatting, or abbreviations.
-    """
-    
-    response = openai_client.beta.chat.completions.parse(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": "You are an expert in comparing legal clause identifiers."},
-            {"role": "user", "content": prompt}
-        ],
-        response_format=ClauseSimilarityResponse
-    )
-    
-    return response.choices[0].message.parsed.is_similar
+def process_document(file_path):
+    content = parse_document(file_path)
+    print(f"[DEBUG] Document content for {file_path}:\n{content[:500]}...")  # First 500 chars
 
-def is_clause_invoked(clause, invoked_clauses, all_invoked):
-    if all_invoked:
-        return True
-    return any(invoked.strip().upper() == clause.strip().upper() for invoked in invoked_clauses)
+    doc_type = determine_document_type(content)
+    print(f"[DEBUG] Determined document type for {file_path}: {doc_type}")
 
-# Add this function to clear the Qdrant database
-def clear_qdrant_database(client: QdrantClient, collection_name: str):
-    try:
-        client.delete_collection(collection_name=collection_name)
-        print(f"Qdrant collection '{collection_name}' has been deleted successfully.")
-    except Exception as e:
-        print(f"Error clearing Qdrant collection '{collection_name}': {str(e)}")
+    chunks = chunk_markdown_text(content)
+    print(f"[DEBUG] Created {len(chunks)} chunks for {file_path}")
+    
+    for chunk in chunks:
+        chunk['metadata']['document_type'] = doc_type
+    
+    embeddings = create_embeddings(chunks)
+    print(f"[DEBUG] Created {len(embeddings)} embeddings for {file_path}")
+    
+    po_analysis = None
+    if doc_type == "Purchase Order":
+        po_analysis = review_po(content)
+        print(f"[DEBUG] PO Analysis for {file_path}:\n{po_analysis}")
+    
+    return file_path, doc_type, chunks, embeddings, po_analysis
 
 def review_documents(file_paths: List[str], company_name: str) -> Dict[str, Any]:
-    # Initialize Qdrant client
+    print(f"[DEBUG] Starting review for company: {company_name}")
+    print(f"[DEBUG] Files to process: {file_paths}")
+
     collection_name = f"{company_name}_documents"
     vector_size = 1536  # Size for text-embedding-3-small
     qdrant_client = initialize_qdrant(collection_name, vector_size)
+    print(f"[DEBUG] Initialized Qdrant collection: {collection_name}")
 
     all_chunks = []
     all_embeddings = []
@@ -316,60 +342,43 @@ def review_documents(file_paths: List[str], company_name: str) -> Dict[str, Any]
     po_analysis = None
     invoked_clauses = []
     all_invoked = False
-    tc_content = ""
 
-    # Process each document
-    for file_path in file_paths:
-        try:
-            content = parse_document(file_path)  # Use parse_document from get_formatted_text.py
-            print(f"Processing file: {file_path}")
-            
-            # Determine document type
-            doc_type = determine_document_type(content)
-            document_types[file_path] = doc_type
-            print(f"Document type: {doc_type}")
-            
-            # If it's a Purchase Order, review it
-            if doc_type == "Purchase Order":
-                po_analysis = review_po(content)
-                print("Purchase Order Analysis:")
-                print(po_analysis)
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        futures = [executor.submit(process_document, file_path) for file_path in file_paths]
+        for future in concurrent.futures.as_completed(futures):
+            try:
+                file_path, doc_type, chunks, embeddings, doc_po_analysis = future.result()
+                document_types[file_path] = doc_type
+                all_chunks.extend(chunks)
+                all_embeddings.extend(embeddings)
                 
-                all_invoked = po_analysis.all_invoked
-                invoked_clauses = po_analysis.clause_identifiers
-            elif doc_type == "Terms and Conditions":
-                tc_content = content
-            
-            chunks = chunk_markdown_text(content)
-            
-            # Add document type to metadata
-            for chunk in chunks:
-                chunk['metadata']['document_type'] = doc_type
-            
-            embeddings = create_embeddings(chunks)
-            
-            all_chunks.extend(chunks)
-            all_embeddings.extend(embeddings)
-            
-            print(f"Processed {file_path}: {len(chunks)} chunks created")
-        except Exception as e:
-            print(f"Error processing {file_path}: {str(e)}")
-            print("Full traceback:")
-            traceback.print_exc()
+                if doc_type == "Purchase Order" and doc_po_analysis:
+                    po_analysis = doc_po_analysis
+                    all_invoked = po_analysis.all_invoked
+                    invoked_clauses = po_analysis.clause_identifiers
+                
+                print(f"[DEBUG] Processed {file_path}: {len(chunks)} chunks created, doc_type: {doc_type}")
+                if doc_po_analysis:
+                    print(f"[DEBUG] PO Analysis for {file_path}: all_invoked={all_invoked}, invoked_clauses={invoked_clauses}")
+            except Exception as e:
+                print(f"[DEBUG] Error processing {file_path}: {str(e)}")
+                print("[DEBUG] Full traceback:")
+                traceback.print_exc()
 
-    # Store all embeddings in Qdrant
+    print(f"[DEBUG] Total chunks: {len(all_chunks)}, Total embeddings: {len(all_embeddings)}")
     store_embeddings_in_qdrant(qdrant_client, collection_name, all_chunks, all_embeddings)
+    print(f"[DEBUG] Stored embeddings in Qdrant collection: {collection_name}")
 
-    # Query for notable clauses
     notable_clauses = load_notable_clauses()
+    print(f"[DEBUG] Loaded {len(notable_clauses)} notable clauses")
+
     results = []
 
     for clause, description in notable_clauses.items():
-        print(f"\nAnalyzing clause: {clause}")
+        print(f"\n[DEBUG] Analyzing clause: {clause}")
         clause_results = query_qdrant_for_clauses(qdrant_client, collection_name, clause)
-        print(f"Found {len(clause_results)} relevant text chunks")
+        print(f"[DEBUG] Found {len(clause_results)} relevant text chunks for clause: {clause}")
         
-        # Prepare the prompt for OpenAI
         prompt = f"""
         Clause: {clause}
         Description: {description}
@@ -378,14 +387,13 @@ def review_documents(file_paths: List[str], company_name: str) -> Dict[str, Any]
         {json.dumps(clause_results, indent=2)}
         
         Purchase Order Analysis:
-        All clauses invoked: {po_analysis.all_invoked}
-        Specific clauses invoked: {json.dumps(po_analysis.clause_identifiers)}
+        All clauses invoked: {all_invoked}
+        Specific clauses invoked: {json.dumps(invoked_clauses)}
         
         Based on the above information, analyze this clause with the following instructions:
         1. If 'All clauses invoked' is True, analyze this clause for all document types.
         2. If 'All clauses invoked' is False:
            a. For Quality Control (QC) documents: only analyze this clause if it exactly matches (ignoring case) one of the 'Specific clauses invoked'.
-           
            b. For Terms and Conditions (TC) documents: always analyze this clause.
            c. For Purchase Order (PO) documents: always analyze this clause.
         3. When including quotes, only use quotes from the appropriate document type based on the above rules.
@@ -407,8 +415,7 @@ def review_documents(file_paths: List[str], company_name: str) -> Dict[str, Any]
         Note: Only include quotes if the clause is invoked. If not invoked, return an empty list for quotes.
         """
         
-        print("Sending prompt to OpenAI for analysis")
-        # Call OpenAI for analysis
+        print(f"[DEBUG] Sending prompt to OpenAI for clause analysis: {clause}")
         response = openai_client.beta.chat.completions.parse(
             model="gpt-4o-2024-08-06",
             messages=[
@@ -419,34 +426,23 @@ def review_documents(file_paths: List[str], company_name: str) -> Dict[str, Any]
         )
         
         analysis = response.choices[0].message.parsed
+        print(f"[DEBUG] Received analysis for clause {clause}: invoked={analysis.invoked}, quotes={len(analysis.quotes)}")
         if analysis.invoked == 'Yes':
             results.append(analysis.model_dump())
-            print(f"Clause {clause} is invoked. Added to results.")
+            print(f"[DEBUG] Clause {clause} is invoked. Added to results.")
         else:
-            print(f"Clause {clause} is not invoked. Skipped.")
+            print(f"[DEBUG] Clause {clause} is not invoked. Skipped.")
 
-    print("\nFinal results:")
-    print("company name: ", company_name)
-    print("document types: ", document_types)
-    print("po analysis: ", po_analysis)
-    print("clause analysis:")
-    for result in results:
-        print(f"\nClause: {result['clause']}")
-        print(f"Invoked: {result['invoked']}")
-        if result['invoked'] == 'Yes':
-            for quote in result['quotes']:
-                print(f"- Document Type: {quote['document_type']}")
-                print(f"  Clause ID: {quote['clause']}")
-                print(f"  Quote: {quote['quote']}")
-
-    results = {
-        'company_name': company_name,
-        'document_types': document_types,
-        'po_analysis': po_analysis.model_dump(),  # Use model_dump instead of dict
-        'clause_analysis': results
+    print(f"[DEBUG] Review completed. Total results: {len(results)}")
+    return {
+        "company_name": company_name,
+        "po_analysis": po_analysis.model_dump() if po_analysis else None,
+        "clause_analysis": results
     }
 
-    # Clear the Qdrant database after processing
-    clear_qdrant_database(qdrant_client, collection_name)
-
-    return results
+# Example usage
+if __name__ == "__main__":
+    file_paths = ["path/to/document1.pdf", "path/to/document2.docx"]
+    company_name = "Example Company"
+    review_results = review_documents(file_paths, company_name)
+    print(json.dumps(review_results, indent=2))
