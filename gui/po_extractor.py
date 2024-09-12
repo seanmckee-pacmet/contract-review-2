@@ -29,7 +29,14 @@ class POExtractorTab(QWidget):
 
         self.upload_label = QLabel("Drag & Drop files here or click to select")
         self.upload_label.setAlignment(Qt.AlignCenter)
-        self.upload_label.setStyleSheet("border: 2px dashed #aaa; padding: 20px;")
+        self.upload_label.setStyleSheet("""
+            border: 2px dashed #666666;
+            border-radius: 5px;
+            background-color: #2a2a2a;
+            color: #cccccc;
+            font-size: 14px;
+            padding: 20px;
+        """)
         self.upload_label.setAcceptDrops(True)
         self.upload_label.mousePressEvent = self.select_files
         layout.addWidget(self.upload_label)
@@ -37,13 +44,45 @@ class POExtractorTab(QWidget):
         self.process_button = QPushButton('Process POs')
         self.process_button.clicked.connect(self.process_pos)
         self.process_button.setEnabled(False)
+        self.process_button.setStyleSheet("""
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                padding: 8px 16px;
+                border: none;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+            QPushButton:disabled {
+                background-color: #555555;
+            }
+        """)
         layout.addWidget(self.process_button)
 
         self.progress_bar = QProgressBar()
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: 2px solid #444444;
+                border-radius: 5px;
+                text-align: center;
+            }
+            QProgressBar::chunk {
+                background-color: #4CAF50;
+            }
+        """)
         layout.addWidget(self.progress_bar)
 
         self.result_text = QTextEdit()
         self.result_text.setReadOnly(True)
+        self.result_text.setStyleSheet("""
+            QTextEdit {
+                background-color: #2a2a2a;
+                color: #ffffff;
+                border: 1px solid #444444;
+            }
+        """)
         layout.addWidget(self.result_text)
 
         self.setLayout(layout)

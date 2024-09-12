@@ -184,8 +184,7 @@ class ClauseAnalysisResponse(BaseModel):
     invoked: str
     quotes: List[Quote]
 
-# scan Tiff file which is the purchase order and use open ai to determine if there are specific clauses invoked from quality document or if there are any notable clauses
-# params: po_markdown - markdown from the tiff file
+
 def review_po(po_markdown):
     response = openai_client.beta.chat.completions.parse(
         model="gpt-4o-2024-08-06",
