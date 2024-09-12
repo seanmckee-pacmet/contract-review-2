@@ -239,7 +239,7 @@ def review_po(po_markdown):
              Purchase Order:
              ''' + po_markdown}
         ],
-        response_format=POAnalysisResponse,
+        response_format=POAnalysisResponse
     )
     
     return response.choices[0].message.parsed
@@ -261,7 +261,7 @@ def determine_document_type(text: str) -> str:
             {"role": "system", "content": "You are an expert at identifying document types."},
             {"role": "user", "content": prompt}
         ],
-        response_format=DocumentTypeResponse,
+        response_format=DocumentTypeResponse
     )
 
     return response.choices[0].message.parsed.document_type
@@ -287,7 +287,7 @@ def is_clause_similar(clause, invoked_clauses):
             {"role": "system", "content": "You are an expert in comparing legal clause identifiers."},
             {"role": "user", "content": prompt}
         ],
-        response_format=ClauseSimilarityResponse,
+        response_format=ClauseSimilarityResponse
     )
     
     return response.choices[0].message.parsed.is_similar
@@ -296,6 +296,14 @@ def is_clause_invoked(clause, invoked_clauses, all_invoked):
     if all_invoked:
         return True
     return any(invoked.strip().upper() == clause.strip().upper() for invoked in invoked_clauses)
+
+# Add this function to clear the Qdrant database
+def clear_qdrant_database(client: QdrantClient, collection_name: str):
+    try:
+        client.delete_collection(collection_name=collection_name)
+        print(f"Qdrant collection '{collection_name}' has been deleted successfully.")
+    except Exception as e:
+        print(f"Error clearing Qdrant collection '{collection_name}': {str(e)}")
 
 def review_documents(file_paths: List[str], company_name: str) -> Dict[str, Any]:
     # Initialize Qdrant client
@@ -408,7 +416,7 @@ def review_documents(file_paths: List[str], company_name: str) -> Dict[str, Any]
                 {"role": "system", "content": "You are a legal expert analyzing contract clauses."},
                 {"role": "user", "content": prompt}
             ],
-            response_format=ClauseAnalysisResponse,
+            response_format=ClauseAnalysisResponse
         )
         
         analysis = response.choices[0].message.parsed
@@ -432,9 +440,14 @@ def review_documents(file_paths: List[str], company_name: str) -> Dict[str, Any]
                 print(f"  Clause ID: {quote['clause']}")
                 print(f"  Quote: {quote['quote']}")
 
-    return {
+    results = {
         'company_name': company_name,
         'document_types': document_types,
         'po_analysis': po_analysis.model_dump(),  # Use model_dump instead of dict
         'clause_analysis': results
     }
+
+    # Clear the Qdrant database after processing
+    clear_qdrant_database(qdrant_client, collection_name)
+
+    return results
