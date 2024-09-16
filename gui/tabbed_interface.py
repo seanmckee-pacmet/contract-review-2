@@ -6,7 +6,7 @@ from .po_extractor import POExtractorTab
 class TabbedInterface(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Document Review App")
+        self.setWindowTitle("Contract Review")
         self.setGeometry(100, 100, 1600, 900)
 
         # Apply dark theme to the entire application

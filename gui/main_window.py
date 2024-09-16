@@ -1,11 +1,11 @@
 import os
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QPushButton, QLabel, 
                              QSizePolicy, QFileDialog, QLineEdit, QMessageBox, QComboBox, QTextEdit,
-                             QApplication, QMainWindow)
+                             QApplication, QMainWindow, QTreeWidget, QTreeWidgetItem)
 from PyQt5.QtCore import Qt, QMimeData, QTimer, QThread, pyqtSignal
 from PyQt5.QtGui import QDragEnterEvent, QDropEvent, QColor, QFont, QPainter
 from src.review import review_documents
-
+import json
 class DropArea(QLabel):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -267,63 +267,122 @@ class MainWindow(QWidget):
         selected_job = self.job_selector.currentText()
         if selected_job in self.review_results:
             self.results_display.display_results(self.review_results[selected_job])
+import json
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QTreeWidget, QTreeWidgetItem
+from PyQt5.QtGui import QFont, QColor
+from PyQt5.QtCore import Qt
+import textwrap
 
 class ResultsDisplay(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.layout = QVBoxLayout(self)
-        self.text_edit = QTextEdit()
-        self.text_edit.setReadOnly(True)
-        self.text_edit.setFont(QFont("Arial", 11))
-        self.layout.addWidget(self.text_edit)
+        self.tree = QTreeWidget()
+        self.tree.setHeaderLabels(["Category / Clause / Quote"])
+        self.tree.setColumnCount(1)
+        self.tree.setWordWrap(True)
+        self.tree.setUniformRowHeights(False)
+        self.layout.addWidget(self.tree)
+        
+        with open('notable_clauses.json', 'r') as f:
+            self.categories = json.load(f)
+
+        self.setStyleSheet("""
+            QTreeWidget {
+                background-color: #2a2a2a;
+                color: #cccccc;
+                font-size: 13px;
+            }
+            QTreeWidget::item {
+                padding: 4px;
+            }
+            QTreeWidget::item:selected {
+                background-color: #3a3a3a;
+            }
+        """)
 
     def clear(self):
-        self.text_edit.clear()
+        self.tree.clear()
+
+    def wrap_text(self, text, width=80):
+        return '\n'.join(textwrap.wrap(text, width))
 
     def display_results(self, results):
-        po_data = results['po_analysis']
-        html_content = """
-        <style>
-            body {{ font-family: Arial, sans-serif; font-size: 13px; line-height: 1.6; color: #cccccc; background-color: #2a2a2a; }}
-            h1 {{ color: #ffffff; border-bottom: 1px solid #444444; padding-bottom: 10px; }}
-            h2 {{ color: #ffffff; margin-top: 20px; }}
-            .section {{ margin-bottom: 20px; background-color: #333333; padding: 15px; border-radius: 4px; }}
-            .subsection {{ margin-left: 20px; }}
-            .clause {{ font-weight: bold; color: #4CAF50; }}
-            .quote, .identifier, .requirement {{ margin-left: 20px; font-style: italic; color: #aaaaaa; }}
-            .identifiers {{ margin-left: 40px; text-indent: -20px; }}
-        </style>
-        <h1>Contract Review Results for {company}</h1>
-        """.format(company=results.get('company_name', 'Unknown Company'))
+        self.clear()
+        po_data = results.get('po_analysis', {})
+        company_name = results.get('company_name', 'Unknown Company')
+        clause_analysis = results.get('clause_analysis', [])
 
-        # Purchase Order Analysis
-        if results['po_analysis']:
-            html_content += "<div class='section'><h2>Purchase Order Analysis</h2>"
-            po_data = results['po_analysis']
-            html_content += "<div class='subsection'><h3 class='clause'>Clause Identifiers:</h3>"
-            html_content += "<p class='identifiers'>"
-            identifiers = po_data['clause_identifiers']
-            html_content += ", ".join(f"<span class='identifier'>{identifier}</span>" for identifier in identifiers)
-            html_content += "</p></div>"
-            html_content += "<div class='subsection'><h3 class='clause'>Requirements:</h3><ul>"
-            for req in po_data['requirements']:
-                html_content += f"<li><span class='requirement'>{req}</span></li>"
-            html_content += "</ul></div></div>"
+        # Create root item
+        root = QTreeWidgetItem(self.tree)
+        root.setText(0, f"Contract Review Results for {company_name}")
+        root.setFont(0, QFont("Arial", 12, QFont.Bold))
+        root.setForeground(0, QColor("#ffffff"))
 
-        # Clause Analysis
-        html_content += "<div class='section'><h2>Invoked Clauses</h2>"
-        for clause in results['clause_analysis']:
-            if clause['invoked'] == 'Yes':
-                html_content += f"<div class='subsection'><p class='clause'>{clause['clause']}</p>"
-                if clause['quotes']:
-                    html_content += "<ul>"
-                    for quote in clause['quotes']:
-                        html_content += f"<li class='quote'><strong>{quote['clause']}:</strong> {quote['quote']}</li>"
-                    html_content += "</ul>"
-                html_content += "</div>"
-        html_content += "</div>"
+        # Add PO Analysis
+        if po_data:
+            po_item = QTreeWidgetItem(root)
+            po_item.setText(0, "Purchase Order Analysis")
+            po_item.setFont(0, QFont("Arial", 11, QFont.Bold))
+            po_item.setForeground(0, QColor("#4CAF50"))
 
-        self.text_edit.setHtml(html_content)
+            clause_identifiers = QTreeWidgetItem(po_item)
+            clause_identifiers.setText(0, self.wrap_text(f"Clause Identifiers: {', '.join(po_data.get('clause_identifiers', []))}"))
+
+            requirements_item = QTreeWidgetItem(po_item)
+            requirements_item.setText(0, "Requirements")
+            for req in po_data.get('requirements', []):
+                req_item = QTreeWidgetItem(requirements_item)
+                req_item.setText(0, self.wrap_text(req))
+
+        # Process clause analysis
+        for category, category_data in self.categories.items():
+            category_item = None
+            for clause_name in category_data['clauses']:
+                matching_clause = next((clause for clause in clause_analysis if clause['clause'] == clause_name and clause['invoked'] == 'Yes'), None)
+                
+                if matching_clause:
+                    if not category_item:
+                        category_item = QTreeWidgetItem(root)
+                        category_item.setText(0, category)
+                        category_item.setFont(0, QFont("Arial", 11, QFont.Bold))
+                        category_item.setForeground(0, QColor("#4CAF50"))
+                    
+                    clause_item = QTreeWidgetItem(category_item)
+                    clause_item.setText(0, clause_name)
+                    clause_item.setFont(0, QFont("Arial", 10, QFont.Bold))
+                    clause_item.setForeground(0, QColor("#4CAF50"))
+                    
+                    for quote in matching_clause['quotes']:
+                        quote_item = QTreeWidgetItem(clause_item)
+                        clause_text = f"{quote['clause']}:"
+                        clause_font = QFont()
+                        clause_font.setBold(True)
+                        quote_text = f"{quote['quote']} ({quote['document_type']})"
+                        full_text = self.wrap_text(f"{clause_text} {quote_text}")
+                        
+                        quote_item.setText(0, full_text)
+                        
+                        # Set the clause part to bold and blue
+                        clause_format = quote_item.font(0)
+                        # clause_format.setBold(True)
+                        quote_item.setFont(0, clause_format)
+                        # quote_item.setForeground(0, QColor("#ADD8E6"))
+                        
+                        # Set the quote and document type to normal weight and light gray
+                        quote_item.setData(0, Qt.UserRole, len(clause_text))
+                        quote_item.setData(0, Qt.UserRole + 1, full_text)
+                        
+
+        self.tree.expandToDepth(1)  # Expand to show categories and clauses, but not quotes
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.tree.itemExpanded.connect(self.adjust_column_width)
+        self.tree.itemCollapsed.connect(self.adjust_column_width)
+
+    def adjust_column_width(self, item):
+        self.tree.resizeColumnToContents(0)
 
 if __name__ == "__main__":
     app = QApplication([])

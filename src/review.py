@@ -160,11 +160,14 @@ def store_embeddings_in_qdrant(client: QdrantClient, collection_name: str, chunk
             print(f"Failed to upload batch {i//batch_size + 1} after multiple retries: {str(e)}")
 
 @memoize
-def load_notable_clauses() -> Dict[str, str]:
+def load_notable_clauses() -> Dict[str, Dict[str, Any]]:
     with open('notable_clauses.json', 'r') as f:
         return json.load(f)
 
-def query_qdrant_for_clauses(client: QdrantClient, collection_name: str, query: str, top_k: int = 10) -> List[Dict]:
+def query_qdrant_for_clauses(client: QdrantClient, collection_name: str, clause: str, description: str, top_k: int = 5) -> List[Dict]:
+    # Combine clause and description for a more comprehensive query
+    query = f"{clause}: {description}"
+    
     query_vector = openai_client.embeddings.create(input=query, model=embedding_model_name).data[0].embedding
     search_result = client.search(
         collection_name=collection_name,
@@ -328,6 +331,8 @@ def process_document(file_path):
     return file_path, doc_type, chunks, embeddings, po_analysis
 
 def review_documents(file_paths: List[str], company_name: str) -> Dict[str, Any]:
+    print(f"Clause Analysis for {company_name}\n")
+
     print(f"[DEBUG] Starting review for company: {company_name}")
     print(f"[DEBUG] Files to process: {file_paths}")
 
@@ -370,70 +375,103 @@ def review_documents(file_paths: List[str], company_name: str) -> Dict[str, Any]
     print(f"[DEBUG] Stored embeddings in Qdrant collection: {collection_name}")
 
     notable_clauses = load_notable_clauses()
-    print(f"[DEBUG] Loaded {len(notable_clauses)} notable clauses")
+    print(f"[DEBUG] Loaded notable clauses structure")
 
     results = []
 
-    for clause, description in notable_clauses.items():
-        print(f"\n[DEBUG] Analyzing clause: {clause}")
-        clause_results = query_qdrant_for_clauses(qdrant_client, collection_name, clause)
-        print(f"[DEBUG] Found {len(clause_results)} relevant text chunks for clause: {clause}")
-        
-        prompt = f"""
-        Clause: {clause}
-        Description: {description}
-        
-        Relevant text chunks:
-        {json.dumps(clause_results, indent=2)}
-        
-        Purchase Order Analysis:
-        All clauses invoked: {all_invoked}
-        Specific clauses invoked: {json.dumps(invoked_clauses)}
-        
-        Based on the above information, analyze this clause with the following instructions:
-        1. If 'All clauses invoked' is True, analyze this clause for all document types.
-        2. If 'All clauses invoked' is False:
-           a. For Quality Control (QC) documents: only analyze this clause if it exactly matches (ignoring case) one of the 'Specific clauses invoked'.
-           b. For Terms and Conditions (TC) documents: always analyze this clause.
-           c. For Purchase Order (PO) documents: always analyze this clause.
-        3. When including quotes, only use quotes from the appropriate document type based on the above rules.
-        4. Always include the document type for each quote.
-        
-        If the clause should not be analyzed based on these criteria, respond with {{"invoked": "No", "quotes": []}}.
-        
-        If the clause should be analyzed, determine if it's invoked in the document and return a JSON object with the following structure:
-        {{
-            "clause": "{clause}",
-            "invoked": "Yes/No",
-            "quotes": [
-                {{"clause": "Clause ID", "quote": "Quote Text", "document_type": "Document Type"}},
-                {{"clause": "Clause ID", "quote": "Quote Text", "document_type": "Document Type"}},
-                ...
-            ]
-        }}
-        
-        Note: Only include quotes if the clause is invoked. If not invoked, return an empty list for quotes.
-        """
-        
-        print(f"[DEBUG] Sending prompt to OpenAI for clause analysis: {clause}")
-        response = openai_client.beta.chat.completions.parse(
-            model="gpt-4o-2024-08-06",
-            messages=[
-                {"role": "system", "content": "You are a legal expert analyzing contract clauses."},
-                {"role": "user", "content": prompt}
-            ],
-            response_format=ClauseAnalysisResponse
-        )
-        
-        analysis = response.choices[0].message.parsed
-        print(f"[DEBUG] Received analysis for clause {clause}: invoked={analysis.invoked}, quotes={len(analysis.quotes)}")
-        if analysis.invoked == 'Yes':
-            results.append(analysis.model_dump())
-            print(f"[DEBUG] Clause {clause} is invoked. Added to results.")
-        else:
-            print(f"[DEBUG] Clause {clause} is not invoked. Skipped.")
+    for category, category_data in notable_clauses.items():
+        for clause, description in category_data['clauses'].items():
+            print(f"\nAnalyzing clause: {clause}")
+            print(f"Description: {description}")
+            
+            clause_results = query_qdrant_for_clauses(qdrant_client, collection_name, clause, description)
+            print(f"Found {len(clause_results)} relevant text chunks for clause: {clause}")
+            
+            # Print all the clause results
+            for i, result in enumerate(clause_results, 1):
+                print(f"Result {i}:")
+                print(f"Score: {result['score']}")
+                print(f"Content: {result['content']}")
+                print(f"Document Type: {result['document_type']}")
+                print("---")
+            
+            prompt = f"""
+            Given the following information:
 
-    print(f"[DEBUG] Review completed. Total results: {len(results)}")
+            Clause: {clause}
+            Description: {description}
+
+            Relevant text chunks:
+            {json.dumps(clause_results, indent=2)}
+
+            Purchase Order Analysis:
+            po_invokes_all_clauses: {all_invoked}
+            invoked_clauses: {json.dumps(invoked_clauses)}
+
+            Task:
+            1. Determine if the clause is invoked based on the following rules:
+            - First determine if the chunk is relevant and invokes the clause by comparing the chunk to the clause and clause description
+            - If the document type is a Quality Document AND
+                po_invokes_all_clauses is false AND
+                the clause is in invoked_clauses
+                Then the clause is invoked
+            - If the document type is a Quality Document AND
+                po_invokes_all_clauses is false AND
+                the clause is not in invoked_clauses
+                Then the clause is not invoked
+            - Otherwise, the clause is invoked
+
+            2. If the clause is invoked, analyze ALL provided text chunks to find quotes that provide valuable information relating to the clause or its description.
+            - Include ALL relevant and informative quotes from the provided text chunks.
+            - Only disregard quotes that are completely irrelevant or do not add any value to understanding the clause's application.
+
+            3. Format your response as a JSON object with the following structure:
+            {{
+                "clause": "{clause}",
+                "invoked": "Yes" or "No",
+                "quotes": [
+                    {{
+                        "clause": "Clause ID",
+                        "quote": "Relevant quote text",
+                        "document_type": "Type of document containing the quote"
+                    }},
+                    ...
+                ]
+            }}
+
+            Important notes:
+            - If the clause is not invoked, set "invoked" to "No" and return an empty list for "quotes".
+            - Only include the "quotes" field if the clause is invoked.
+            - Ensure all JSON fields are properly escaped.
+            - Include ALL relevant quotes from the provided text chunks.
+
+            Please analyze ALL given information and provide your response in the specified JSON format.
+            """
+            
+            print("Sending prompt to OpenAI for clause analysis")
+            # print(f"Prompt: {prompt}")
+            
+            response = openai_client.beta.chat.completions.parse(
+                model="gpt-4o-2024-08-06",
+                messages=[
+                    {"role": "system", "content": "You are a legal expert analyzing contract clauses."},
+                    {"role": "user", "content": prompt}
+                ],
+                response_format=ClauseAnalysisResponse
+            )
+            
+            analysis = response.choices[0].message.parsed
+            print(f"Received analysis for clause {clause}: invoked={analysis.invoked}, quotes={len(analysis.quotes)}")
+            
+            if analysis.invoked == 'Yes':
+                results.append(analysis.model_dump())
+                print(f"Clause {clause} is invoked. Added to results.")
+                # for quote in analysis.quotes:
+                #     print(f"Quote: {quote['quote']} (Document Type: {quote['document_type']})")
+            else:
+                print(f"Clause {clause} is not invoked. Skipped.")
+
+    print(f"Review completed. Total results: {len(results)}")
     return {
         "company_name": company_name,
         "po_analysis": po_analysis.model_dump() if po_analysis else None,
