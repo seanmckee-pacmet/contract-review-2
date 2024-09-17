@@ -13,6 +13,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 import concurrent.futures
 from pydantic import BaseModel
 import functools
+import asyncio
 
 # Load environment variables
 load_dotenv()
@@ -36,13 +37,14 @@ class ClauseSimilarityResponse(BaseModel):
     is_similar: bool
 
 class Quote(BaseModel):
-    clause: str
     quote: str
     document_type: str
+    relevance: str
 
 class ClauseAnalysisResponse(BaseModel):
     clause: str
     invoked: str
+    reasoning: str
     quotes: List[Quote]
 
 # Caching decorator
@@ -68,9 +70,10 @@ def chunk_markdown_text(markdown_text):
     initial_chunks = splitter.split_text(markdown_text)
 
     sub_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000,
+        chunk_size=800,
         chunk_overlap=100,
         length_function=len,
+        separators=["\n\n", "\n", ".", "!", "?", ";", ",", " ", ""]
     )
 
     final_chunks = []
@@ -123,7 +126,7 @@ def initialize_qdrant(collection_name: str, vector_size: int):
     if not any(collection.name == collection_name for collection in collections):
         client.create_collection(
             collection_name=collection_name,
-            vectors_config=VectorParams(size=vector_size, distance=Distance.DOT),
+            vectors_config=VectorParams(size=vector_size, distance=Distance.COSINE),
         )
     return client
 
@@ -164,11 +167,14 @@ def load_notable_clauses() -> Dict[str, Dict[str, Any]]:
     with open('notable_clauses.json', 'r') as f:
         return json.load(f)
 
-def query_qdrant_for_clauses(client: QdrantClient, collection_name: str, clause: str, description: str, top_k: int = 10) -> List[Dict]:
+def query_qdrant_for_clauses(client: QdrantClient, collection_name: str, clause: str, description: str, top_k: int = 6) -> List[Dict]:
     # Combine clause and description for a more comprehensive query
     query = f"{clause}: {description}"
     
     query_vector = openai_client.embeddings.create(input=query, model=embedding_model_name).data[0].embedding
+
+   
+
     search_result = client.search(
         collection_name=collection_name,
         query_vector=query_vector,
@@ -378,98 +384,98 @@ def review_documents(file_paths: List[str], company_name: str) -> Dict[str, Any]
     print(f"[DEBUG] Loaded notable clauses structure")
 
     results = []
+    prompts = []
 
-    for category, category_data in notable_clauses.items():
-        for clause, description in category_data['clauses'].items():
-            print(f"\nAnalyzing clause: {clause}")
-            print(f"Description: {description}")
-            
-            clause_results = query_qdrant_for_clauses(qdrant_client, collection_name, clause, description)
-            print(f"Found {len(clause_results)} relevant text chunks for clause: {clause}")
-            
-            # Print all the clause results
-            for i, result in enumerate(clause_results, 1):
-                print(f"Result {i}:")
-                print(f"Score: {result['score']}")
-                print(f"Content: {result['content']}")
-                print(f"Document Type: {result['document_type']}")
-                print("---")
-            
-            prompt = f"""
-            Given the following information:
+    for clause_id, description in notable_clauses.items():
+        print(f"\nAnalyzing clause: {clause_id}")
+        print(f"Description: {description}")
+        
+        clause_results = query_qdrant_for_clauses(qdrant_client, collection_name, clause_id, description)
+        print(f"Found {len(clause_results)} relevant text chunks for clause: {clause_id}")
+        
+        # Print all the clause results
+        for i, result in enumerate(clause_results, 1):
+            print(f"Result {i}:")
+            print(f"Score: {result['score']}")
+            print(f"Content: {result['content']}")
+            print(f"Document Type: {result['document_type']}")
+            print("---")
+        
+        prompt = f"""
+        Given the following information:
 
-            Clause: {clause}
-            Description: {description}
+        Clause ID: {clause_id}
+        Description: {description}
 
-            Relevant text chunks:
-            {json.dumps(clause_results, indent=2)}
+        Relevant text chunks:
+        {json.dumps(clause_results, indent=2)}
 
-            Purchase Order Analysis:
-            po_invokes_all_clauses: {all_invoked}
-            invoked_clauses: {json.dumps(invoked_clauses)}
+        Purchase Order Analysis:
+        po_invokes_all_clauses: {all_invoked}
+        invoked_clauses: {json.dumps(invoked_clauses)}
 
-            Task:
-            1. Determine if the clause is invoked based on the following rules:
-            - First determine if the chunk is relevant and invokes the clause by comparing the chunk to the clause and clause description
-            - If the document type is a Quality Document AND
-                po_invokes_all_clauses is false AND
-                the clause is in invoked_clauses
-                Then the clause is invoked
-            - If the document type is a Quality Document AND
-                po_invokes_all_clauses is false AND
-                the clause is not in invoked_clauses
-                Then the clause is not invoked
-            - Otherwise, the clause is invoked
+        Task:
+        1. Determine if the clause is invoked based on the following criteria:
+        a. Analyze each text chunk for relevance to the clause and its description.
+        b. Consider a clause invoked if ANY of the following conditions are met:
+            - The chunk explicitly mentions or strongly implies the clause's application
+            - The chunk describes a situation or requirement that aligns with the clause's intent
+            - For Quality Documents:
+                * If po_invokes_all_clauses is true, consider the clause invoked
+                * If po_invokes_all_clauses is false, only consider the clause invoked if it's in the invoked_clauses list
+        c. For non-Quality Documents, evaluate each chunk independently for clause invocation
 
-            2. If the clause is invoked, analyze ALL provided text chunks to find quotes that provide valuable information relating to the clause or its description.
-            - Include ALL relevant and informative quotes from the provided text chunks.
-            - Only disregard quotes that are completely irrelevant or do not add any value to understanding the clause's application.
+        2. If the clause is determined to be invoked, select the MOST relevant quote that:
+        - Directly and unambiguously relates to the clause or its description
+        - Provides the clearest evidence for the clause's application
+        - Extract only the most relevant portion of the quote, while ensuring sufficient context is maintained
+        - If absolutely necessary, select a second quote ONLY if it provides crucial additional context or information not covered by the first quote
 
-            3. Format your response as a JSON object with the following structure:
-            {{
-                "clause": "{clause}",
-                "invoked": "Yes" or "No",
-                "quotes": [
-                    {{
-                        "clause": "Clause ID",
-                        "quote": "Relevant quote text",
-                        "document_type": "Type of document containing the quote"
-                    }},
-                    ...
-                ]
-            }}
+        3. Format your response as a JSON object with the following structure:
+        {{
+            "clause": "{clause_id}",
+            "invoked": "Yes" or "No",
+            "reasoning": "Brief explanation of why the clause is considered invoked or not",
+            "quotes": [
+                {{
+                    "quote": "Concise, relevant excerpt from the text",
+                    "document_type": "Type of document containing the quote",
+                    "relevance": "Brief explanation of quote's relevance to the clause"
+                }},
+                // Include a second quote ONLY if absolutely necessary
+            ]
+        }}
 
-            Important notes:
-            - If the clause is not invoked, set "invoked" to "No" and return an empty list for "quotes".
-            - Only include the "quotes" field if the clause is invoked.
-            - Ensure all JSON fields are properly escaped.
-            - Include ALL relevant quotes from the provided text chunks.
+        Important notes:
+        - If the clause is not invoked, set "invoked" to "No", provide reasoning, and return an empty list for "quotes".
+        - Only include the "quotes" field if the clause is invoked.
+        - Ensure all JSON fields are properly escaped.
+        - Be highly selective in choosing quotes. Prioritize quality and relevance over quantity.
+        - Extract only the most relevant parts of quotes, but include enough context for clarity.
+        - Use ellipsis (...) to indicate omitted text at the beginning or end of a quote if necessary.
+        - The "reasoning" field should provide a clear, concise explanation for the invocation decision.
 
-            Please analyze ALL given information and provide your response in the specified JSON format.
-            """
-            
-            print("Sending prompt to OpenAI for clause analysis")
-            # print(f"Prompt: {prompt}")
-            
-            response = openai_client.beta.chat.completions.parse(
-                model="gpt-4o-2024-08-06",
-                messages=[
-                    {"role": "system", "content": "You are a legal expert analyzing contract clauses."},
-                    {"role": "user", "content": prompt}
-                ],
-                response_format=ClauseAnalysisResponse
-            )
-            
-            analysis = response.choices[0].message.parsed
-            print(f"Received analysis for clause {clause}: invoked={analysis.invoked}, quotes={len(analysis.quotes)}")
-            
-            if analysis.invoked == 'Yes':
-                results.append(analysis.model_dump())
-                print(f"Clause {clause} is invoked. Added to results.")
-                # for quote in analysis.quotes:
-                #     print(f"Quote: {quote['quote']} (Document Type: {quote['document_type']})")
-            else:
-                print(f"Clause {clause} is not invoked. Skipped.")
+        Please analyze the given information thoroughly and provide your response in the specified JSON format, ensuring a focused evaluation of clause invocation with minimal, highly relevant, and concise quotes.
+        """
+        
+        prompts.append(prompt)
+
+    print(f"Sending {len(prompts)} prompts to OpenAI for clause analysis in batches")
+    
+    # Create a new event loop and run the coroutine
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    analyses = loop.run_until_complete(analyze_clauses_batch(openai_client, prompts))
+    loop.close()
+    
+    for analysis in analyses:
+        if analysis and analysis.invoked == 'Yes':
+            results.append(analysis.model_dump())
+            print(f"Clause {analysis.clause} is invoked. Added to results.")
+        elif analysis:
+            print(f"Clause {analysis.clause} is not invoked. Skipped.")
+        else:
+            print("Failed to analyze a clause")
 
     print(f"Review completed. Total results: {len(results)}")
     return {
@@ -477,6 +483,26 @@ def review_documents(file_paths: List[str], company_name: str) -> Dict[str, Any]
         "po_analysis": po_analysis.model_dump() if po_analysis else None,
         "clause_analysis": results
     }
+
+async def analyze_clauses_batch(client: OpenAI, prompts: List[str]) -> List[ClauseAnalysisResponse]:
+    def process_batch(prompt):
+        try:
+            response = client.beta.chat.completions.parse(
+                model="gpt-4o-2024-08-06",
+                messages=[
+                    {"role": "system", "content": "You are a legal expert analyzing contract clauses."},
+                    {"role": "user", "content": prompt}
+                ],
+                response_format=ClauseAnalysisResponse,
+            )
+            return response.choices[0].message.parsed
+        except Exception as e:
+            print(f"Error processing batch: {str(e)}")
+            return None
+
+    loop = asyncio.get_running_loop()
+    tasks = [loop.run_in_executor(None, process_batch, prompt) for prompt in prompts]
+    return await asyncio.gather(*tasks)
 
 # Example usage
 if __name__ == "__main__":
