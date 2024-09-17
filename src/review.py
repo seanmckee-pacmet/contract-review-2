@@ -123,7 +123,7 @@ def initialize_qdrant(collection_name: str, vector_size: int):
     if not any(collection.name == collection_name for collection in collections):
         client.create_collection(
             collection_name=collection_name,
-            vectors_config=VectorParams(size=vector_size, distance=Distance.COSINE),
+            vectors_config=VectorParams(size=vector_size, distance=Distance.DOT),
         )
     return client
 
@@ -164,7 +164,7 @@ def load_notable_clauses() -> Dict[str, Dict[str, Any]]:
     with open('notable_clauses.json', 'r') as f:
         return json.load(f)
 
-def query_qdrant_for_clauses(client: QdrantClient, collection_name: str, clause: str, description: str, top_k: int = 5) -> List[Dict]:
+def query_qdrant_for_clauses(client: QdrantClient, collection_name: str, clause: str, description: str, top_k: int = 10) -> List[Dict]:
     # Combine clause and description for a more comprehensive query
     query = f"{clause}: {description}"
     
