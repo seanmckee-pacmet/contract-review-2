@@ -89,7 +89,7 @@ def check_document_for_clauses(file_path):
 
     # Use OpenAI to analyze the document
     response = client.chat.completions.create(
-        model="gpt-4",  # or another suitable model
+        model="gpt-4o-2024-08-06",  # or another suitable model
         messages=[
             {"role": "system", "content": "You are a legal document analyzer. Identify notable clauses in the given text based on the provided descriptions."},
             {"role": "user", "content": f"Analyze the following document and identify any notable clauses based on these descriptions: {json.dumps(notable_clauses)}. Document text: {document_text}"}
