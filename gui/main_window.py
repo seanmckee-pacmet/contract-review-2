@@ -1,7 +1,7 @@
 import os
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QPushButton, QLabel, 
                              QSizePolicy, QFileDialog, QLineEdit, QMessageBox, QComboBox, QTextEdit,
-                             QApplication, QMainWindow, QTreeWidget, QTreeWidgetItem)
+                             QApplication, QMainWindow, QTreeWidget, QTreeWidgetItem, QMenu)
 from PyQt5.QtCore import Qt, QMimeData, QTimer, QThread, pyqtSignal
 from PyQt5.QtGui import QDragEnterEvent, QDropEvent, QColor, QFont, QPainter
 from src.review import review_documents
@@ -197,6 +197,58 @@ class MainWindow(QWidget):
         # Add loading indicator
         self.loading_indicator = LoadingIndicator(self)
         self.loading_indicator.setGeometry(self.width() // 2 - 50, self.height() // 2 - 50, 100, 100)
+
+        self.clear_button = ModernButton("Clear All", "#FF5722")
+        self.clear_button.clicked.connect(self.clear_all)
+        middle_layout.addWidget(self.clear_button)
+
+        # Enable context menu for job_list and current_files
+        self.job_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.job_list.customContextMenuRequested.connect(self.show_job_context_menu)
+        
+        self.current_files.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.current_files.customContextMenuRequested.connect(self.show_file_context_menu)
+    
+    def show_job_context_menu(self, position):
+        menu = QMenu()
+        delete_action = menu.addAction("Delete Job")
+        action = menu.exec_(self.job_list.mapToGlobal(position))
+        if action == delete_action:
+            self.delete_selected_job()
+
+    def show_file_context_menu(self, position):
+        menu = QMenu()
+        delete_action = menu.addAction("Delete File")
+        action = menu.exec_(self.current_files.mapToGlobal(position))
+        if action == delete_action:
+            self.delete_selected_file()
+
+    def delete_selected_job(self):
+        current_item = self.job_list.currentItem()
+        if current_item:
+            company_name = current_item.text().split(" (")[0]
+            del self.jobs[company_name]
+            self.update_job_list()
+            self.job_selector.clear()
+            for company in self.jobs.keys():
+                self.job_selector.addItem(company)
+
+    def delete_selected_file(self):
+        current_item = self.current_files.currentItem()
+        if current_item:
+            file_name = current_item.text()
+            self.files = [f for f in self.files if os.path.basename(f) != file_name]
+            self.current_files.takeItem(self.current_files.row(current_item))
+
+    def clear_all(self):
+        self.files.clear()
+        self.jobs.clear()
+        self.review_results.clear()
+        self.current_files.clear()
+        self.job_list.clear()
+        self.job_selector.clear()
+        self.company_name_input.clear()
+        self.results_display.clear()
 
     def showEvent(self, event):
         super().showEvent(event)

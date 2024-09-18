@@ -81,6 +81,10 @@ def review_documents(file_paths: List[str], company_name: str) -> Dict[str, Any]
         po_invokes_all_clauses: {all_invoked}
         invoked_clauses: {json.dumps(invoked_clauses)}
 
+        General Instructions:
+        - based off all the quotes provided, determine if the clause is invoked and which quotes invoke it
+        - use instructions below as a guide to determine if the clause is invoked and to select the most relevant quotes
+
         Background Information:
         These quotes come from documents supplied by a buyer.
         We are the seller/vendor/supplier.

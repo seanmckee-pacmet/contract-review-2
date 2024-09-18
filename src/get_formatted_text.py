@@ -83,4 +83,6 @@ def parse_document(doc_path):
         raise ValueError(f"Unsupported file type: {doc_path}")
 
 def get_formatted_text(file_path):
-    return parse_document(file_path)
+    response = parse_document(file_path)
+    print("markdown response: ", response)
+    return response
