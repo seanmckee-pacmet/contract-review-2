@@ -22,7 +22,6 @@ def create_embeddings(chunks: List[Dict], batch_size: int = 100) -> List[List[fl
             batch_embeddings = [data.embedding for data in response.data]
             all_embeddings.extend(batch_embeddings)
             
-            print(f"Processed batch {i//batch_size + 1} of {(len(chunks)-1)//batch_size + 1}")
             
             time.sleep(1)
         except Exception as e:

@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 from openai import OpenAI
 import os
 import asyncio
@@ -10,6 +10,7 @@ class Quote(BaseModel):
     quote: str
     document_type: str
     header: str
+    certainty: int  
 
 class ClauseAnalysisResponse(BaseModel):
     clause: str

@@ -4,21 +4,6 @@ from PyQt5.QtCore import QThread, pyqtSignal, Qt
 from src.po_extract import process_multiple_purchase_orders
 import json
 
-class POProcessingThread(QThread):
-    update_progress = pyqtSignal(int)
-    finished = pyqtSignal(list)
-
-    def __init__(self, file_paths):
-        super().__init__()
-        self.file_paths = file_paths
-
-    def run(self):
-        results = process_multiple_purchase_orders(self.file_paths)
-        total_files = len(self.file_paths)
-        for i, result in enumerate(results):
-            self.update_progress.emit(int((i + 1) / total_files * 100))
-        self.finished.emit(results)
-
 class POExtractorTab(QWidget):
     def __init__(self):
         super().__init__()
@@ -26,7 +11,20 @@ class POExtractorTab(QWidget):
 
     def initUI(self):
         layout = QVBoxLayout()
+        layout.setSpacing(10)
+        layout.setContentsMargins(20, 20, 20, 20)
 
+        # Add a header
+        header = QLabel("Purchase Order Extractor")
+        header.setStyleSheet("font-size: 18px; font-weight: bold; color: #ffffff;")
+        layout.addWidget(header)
+
+        # Add a description
+        description = QLabel("Upload your purchase order files to extract referenced documents.")
+        description.setStyleSheet("font-size: 14px; color: #cccccc; margin-bottom: 10px;")
+        layout.addWidget(description)
+
+        # Drag & Drop area
         self.upload_label = QLabel("Drag & Drop files here or click to select")
         self.upload_label.setAlignment(Qt.AlignCenter)
         self.upload_label.setStyleSheet("""
@@ -34,13 +32,16 @@ class POExtractorTab(QWidget):
             border-radius: 5px;
             background-color: #2a2a2a;
             color: #cccccc;
-            font-size: 14px;
-            padding: 20px;
+            font-size: 16px;
+            padding: 40px;
         """)
         self.upload_label.setAcceptDrops(True)
         self.upload_label.mousePressEvent = self.select_files
         layout.addWidget(self.upload_label)
 
+        # Buttons and progress bar in a horizontal layout
+        button_layout = QVBoxLayout()
+        
         self.process_button = QPushButton('Process POs')
         self.process_button.clicked.connect(self.process_pos)
         self.process_button.setEnabled(False)
@@ -48,9 +49,10 @@ class POExtractorTab(QWidget):
             QPushButton {
                 background-color: #4CAF50;
                 color: white;
-                padding: 8px 16px;
+                padding: 10px 20px;
                 border: none;
                 border-radius: 4px;
+                font-size: 14px;
             }
             QPushButton:hover {
                 background-color: #45a049;
@@ -59,7 +61,7 @@ class POExtractorTab(QWidget):
                 background-color: #555555;
             }
         """)
-        layout.addWidget(self.process_button)
+        button_layout.addWidget(self.process_button)
 
         self.progress_bar = QProgressBar()
         self.progress_bar.setStyleSheet("""
@@ -67,13 +69,17 @@ class POExtractorTab(QWidget):
                 border: 2px solid #444444;
                 border-radius: 5px;
                 text-align: center;
+                height: 25px;
             }
             QProgressBar::chunk {
                 background-color: #4CAF50;
             }
         """)
-        layout.addWidget(self.progress_bar)
+        button_layout.addWidget(self.progress_bar)
 
+        layout.addLayout(button_layout)
+
+        # Results area
         self.result_text = QTextEdit()
         self.result_text.setReadOnly(True)
         self.result_text.setStyleSheet("""
@@ -81,9 +87,12 @@ class POExtractorTab(QWidget):
                 background-color: #2a2a2a;
                 color: #ffffff;
                 border: 1px solid #444444;
+                font-family: Consolas, Monaco, monospace;
+                font-size: 12px;
             }
         """)
-        layout.addWidget(self.result_text)
+        self.result_text.setMinimumHeight(300)  # Increase the minimum height
+        layout.addWidget(self.result_text, 1)  # Give it a stretch factor of 1
 
         self.setLayout(layout)
 

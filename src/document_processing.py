@@ -68,23 +68,22 @@ def determine_document_type(content: str) -> str:
 
 def process_document(file_path):
     content = parse_document(file_path)
-    print(f"[DEBUG] Document content for {file_path}:\n{content[:500]}...")  # First 500 chars
 
     doc_type = determine_document_type(content)
-    print(f"[DEBUG] Determined document type for {file_path}: {doc_type}")
 
     chunks = chunk_markdown_text(content)
-    print(f"[DEBUG] Created {len(chunks)} chunks for {file_path}")
+    
+    # Extract just the file name without extension
+    document_name = file_path.split('/')[-1].split('.')[0]
     
     for chunk in chunks:
         chunk['metadata']['document_type'] = doc_type
+        chunk['metadata']['document_name'] = document_name
     
     embeddings = create_embeddings(chunks)
-    print(f"[DEBUG] Created {len(embeddings)} embeddings for {file_path}")
     
     po_analysis = None
     if doc_type == "Purchase Order":
         po_analysis = review_po(content)
-        print(f"[DEBUG] PO Analysis for {file_path}:\n{po_analysis}")
     
     return file_path, doc_type, chunks, embeddings, po_analysis

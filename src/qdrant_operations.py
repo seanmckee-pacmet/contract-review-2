@@ -4,6 +4,7 @@ import os
 from typing import List, Dict
 from tenacity import retry, stop_after_attempt, wait_exponential
 from openai import OpenAI
+import tiktoken
 
 openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 embedding_model_name = "text-embedding-3-small"
@@ -50,7 +51,6 @@ def store_embeddings_in_qdrant(client: QdrantClient, collection_name: str, chunk
         batch = points[i:i+batch_size]
         try:
             upsert_with_retry(client, collection_name, batch)
-            print(f"Uploaded batch {i//batch_size + 1} of {(len(points)-1)//batch_size + 1}")
         except Exception as e:
             print(f"Failed to upload batch {i//batch_size + 1} after multiple retries: {str(e)}")
 
@@ -71,3 +71,33 @@ def query_qdrant_for_clauses(client: QdrantClient, collection_name: str, clause:
         } 
         for hit in search_result
     ]
+
+def get_ai_response(client: QdrantClient, collection_name: str, query: str, max_tokens: int = 1000) -> str:
+    # Embed the query
+    query_vector = openai_client.embeddings.create(input=query, model=embedding_model_name).data[0].embedding
+
+    # Search Qdrant for top 10 results
+    search_result = client.search(
+        collection_name=collection_name,
+        query_vector=query_vector,
+        limit=10
+    )
+
+    # Prepare context from search results
+    context = "\n\n".join([hit.payload["content"] for hit in search_result])
+
+    # Prepare the prompt for OpenAI
+    prompt = f"Context:\n{context}\n\nQuery: {query}\n\nAnswer:"
+
+    # Get response from OpenAI
+    response = openai_client.chat.completions.create(
+        model="gpt-4o-2024-08-06",
+        messages=[
+            {"role": "system", "content": "You are a helpful assistant. Provide a concise answer based on the given context."},
+            {"role": "user", "content": prompt}
+        ],
+        max_tokens=max_tokens,
+        temperature=0,
+    )
+
+    return response.choices[0].message.content.strip()

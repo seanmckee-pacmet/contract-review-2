@@ -18,7 +18,7 @@ def review_documents(file_paths: List[str], company_name: str) -> Dict[str, Any]
     print(f"[DEBUG] Starting review for company: {company_name}")
     print(f"[DEBUG] Files to process: {file_paths}")
 
-    collection_name = f"{company_name}_documents"
+    collection_name = f"{company_name}"
     vector_size = 1536  # Size for text-embedding-3-small
     qdrant_client = initialize_qdrant(collection_name, vector_size)
     print(f"[DEBUG] Initialized Qdrant collection: {collection_name}")
@@ -60,11 +60,11 @@ def review_documents(file_paths: List[str], company_name: str) -> Dict[str, Any]
     results = []
     prompts = []
 
-    for clause_id, description in notable_clauses.items():
+    for clause_id, clause_info in notable_clauses.items():
         print(f"\nAnalyzing clause: {clause_id}")
-        print(f"Description: {description}")
+        print(f"Description: {clause_info['Description']}")
         
-        clause_results = query_qdrant_for_clauses(qdrant_client, collection_name, clause_id, description)
+        clause_results = query_qdrant_for_clauses(qdrant_client, collection_name, clause_id, clause_info['Description'])
         print(f"DEBUG: Clause results: {clause_results}")
         print(f"Found {len(clause_results)} relevant text chunks for clause: {clause_id}")
         
@@ -72,7 +72,8 @@ def review_documents(file_paths: List[str], company_name: str) -> Dict[str, Any]
         Given the following information:
 
         Clause ID: {clause_id}
-        Description: {description}
+        Description: {clause_info['Description']}
+        
 
         Relevant text chunks:
         {json.dumps(clause_results, indent=2)}
@@ -93,6 +94,9 @@ def review_documents(file_paths: List[str], company_name: str) -> Dict[str, Any]
         Task:
         1. Determine if the clause is invoked based on the following criteria:
         a. Analyze each text chunk for relevance to the clause and its description.
+
+        Here are some examples of quotes that invoke the clause (assuming PO invokes it):
+        {json.dumps(clause_info['Examples'], indent=2)}
         b. Consider a clause invoked if ANY of the following conditions are met:
             - The chunk mentions or implies the clause's application
             - The chunk describes a situation, requirement, or mandate that aligns with the clause's intent
@@ -154,6 +158,9 @@ def review_documents(file_paths: List[str], company_name: str) -> Dict[str, Any]
             print("Failed to analyze a clause")
 
     print(f"Review completed. Total results: {len(results)}")
+
+   
+
     return {
         "company_name": company_name,
         "po_analysis": po_analysis.model_dump() if po_analysis else None,

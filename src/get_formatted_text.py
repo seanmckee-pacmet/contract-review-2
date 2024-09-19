@@ -22,11 +22,9 @@ def parse_pdf_to_markdown(pdf_path):
     try:
         file_extractor = {".pdf": parser}
         reader = SimpleDirectoryReader(input_files=[pdf_path], file_extractor=file_extractor)
-        print(f"Successfully created SimpleDirectoryReader for {pdf_path}")
         
         documents = reader.load_data()
-        print(f"Successfully loaded data from {pdf_path}")
-        print(f"Number of documents/pages parsed: {len(documents)}")
+
         
         if documents:
             markdown_content = []
@@ -84,5 +82,4 @@ def parse_document(doc_path):
 
 def get_formatted_text(file_path):
     response = parse_document(file_path)
-    print("markdown response: ", response)
     return response
