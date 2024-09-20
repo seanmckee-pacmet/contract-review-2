@@ -4,31 +4,7 @@ from PyQt5.QtCore import Qt, QTimer, QSortFilterProxyModel
 from PyQt5.QtGui import QFont, QPalette, QColor, QStandardItemModel, QStandardItem
 from src.qdrant_operations import initialize_qdrant, query_qdrant_for_clauses, get_ai_response
 
-class SearchableComboBox(QComboBox):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        
-        self.setEditable(True)
-        self.setInsertPolicy(QComboBox.NoInsert)
-        self.setMaxVisibleItems(10)
-        
-        # Set up the completer
-        self.completer = QCompleter(self)
-        self.completer.setCompletionMode(QCompleter.PopupCompletion)
-        self.completer.setCaseSensitivity(Qt.CaseInsensitive)
-        self.setCompleter(self.completer)
-        
-        # Set up the filter model for the completer
-        self.proxy_model = QSortFilterProxyModel(self)
-        self.proxy_model.setFilterCaseSensitivity(Qt.CaseInsensitive)
-        self.proxy_model.setSourceModel(self.model())
-        
-        self.completer.setModel(self.proxy_model)
-        
-        self.lineEdit().textEdited.connect(self.on_text_edited)
-    
-    def on_text_edited(self, text):
-        self.proxy_model.setFilterFixedString(text)
+# Remove the SearchableComboBox class as it's no longer needed
 
 class ChatWindow(QWidget):
     def __init__(self):
@@ -79,13 +55,13 @@ class ChatWindow(QWidget):
         title.setStyleSheet("font-size: 18px; font-weight: bold; margin-bottom: 10px;")
         layout.addWidget(title)
 
-        # Company selector
+        # Replace company selector with a QLineEdit
         company_layout = QHBoxLayout()
-        company_label = QLabel("Select Company:")
-        self.company_selector = SearchableComboBox()
-        self.company_selector.addItems(["Company A", "Company B", "Company C", "Another Corp", "Yet Another Inc", "Final Company Ltd"])
+        company_label = QLabel("Enter Company Name:")
+        self.company_input = QLineEdit()
+        self.company_input.setPlaceholderText("Type company name here...")
         company_layout.addWidget(company_label)
-        company_layout.addWidget(self.company_selector)
+        company_layout.addWidget(self.company_input)
         layout.addLayout(company_layout)
 
         # Chat history
@@ -118,17 +94,20 @@ class ChatWindow(QWidget):
 
         self.input_field.clear()
         
-        selected_company = self.company_selector.currentText()
+        company_name = self.company_input.text().strip()
+        if not company_name:
+            self.append_message('System', 'Please enter a company name.', '#FF0000')
+            return
         
         # Use QTimer to add messages asynchronously
         QTimer.singleShot(0, lambda: self.append_message('You', user_message, '#4CAF50'))
         
         # Get AI response
-        QTimer.singleShot(100, lambda: self.get_and_display_response(user_message, selected_company))
+        QTimer.singleShot(100, lambda: self.get_and_display_response(user_message, company_name))
 
     def append_message(self, sender, message, color):
         self.chat_history.append(f'<p style="color: {color};"><b>{sender}:</b> {message}</p>')
 
     def get_and_display_response(self, user_message, company):
-        response = get_ai_response(self.qdrant_client, "Incora", user_message)
+        response = get_ai_response(self.qdrant_client, company, user_message)
         self.append_message('Assistant', response, '#2196F3')
