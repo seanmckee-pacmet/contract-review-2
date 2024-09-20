@@ -63,15 +63,7 @@ def process_multiple_purchase_orders(file_paths: List[str]) -> List[Dict]:
         try:
             result = process_purchase_order(file_path)
             results.append(result)
-            print(f"Processed: {file_path}")
         except Exception as e:
             print(f"Error processing {file_path}: {str(e)}")
     return results
 
-if __name__ == "__main__":
-    file_paths = ["path/to/po1.tiff", "path/to/po2.pdf"]  # Example file paths
-    results = process_multiple_purchase_orders(file_paths)
-    for result in results:
-        print(f"\nFile: {result['file_path']}")
-        print("Referenced Documents:")
-        print(json.dumps(result['referenced_documents'], indent=2))
