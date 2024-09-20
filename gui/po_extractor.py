@@ -4,6 +4,21 @@ from PyQt5.QtCore import QThread, pyqtSignal, Qt
 from src.po_extract import process_multiple_purchase_orders
 import json
 
+class POProcessingThread(QThread):
+    update_progress = pyqtSignal(int)
+    finished = pyqtSignal(list)
+
+    def __init__(self, file_paths):
+        super().__init__()
+        self.file_paths = file_paths
+
+    def run(self):
+        results = process_multiple_purchase_orders(self.file_paths)
+        total_files = len(self.file_paths)
+        for i, result in enumerate(results, 1):
+            self.update_progress.emit(int((i / total_files) * 100))
+        self.finished.emit(results)
+
 class POExtractorTab(QWidget):
     def __init__(self):
         super().__init__()
