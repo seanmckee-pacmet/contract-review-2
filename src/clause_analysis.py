@@ -10,7 +10,7 @@ class Quote(BaseModel):
     quote: str
     document_type: str
     header: str
-    certainty: int  
+    requires_human_review: str  
 
 class ClauseAnalysisResponse(BaseModel):
     clause: str

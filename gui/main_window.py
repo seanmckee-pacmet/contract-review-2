@@ -782,11 +782,17 @@ class ResultsDisplay(QWidget):
                 for quote in matching_clause['quotes']:
                     quote_item = QTreeWidgetItem(clause_item)
                     
+                    # Debugging: Print the entire quote dictionary
+                    print(f"DEBUG: Quote object: {json.dumps(quote, indent=2)}")
+                    
+                    # Access the header directly from the quote
                     source = quote.get('header', 'Unknown Source')
                     doc_type = quote.get('document_type', 'Unknown Type')
-                    certainty = quote.get('certainty', 'Unknown')
                     
-                    quote_text = f"[{source}] ({doc_type}) - Certainty: {certainty}\n {quote['quote']}"
+                    print(f"DEBUG: Extracted source: {source}, doc_type: {doc_type}")
+                    
+                    requires_review = quote.get('requires_human_review', 'Yes')
+                    quote_text = f"[{source}] ({doc_type}) [Requires Review: {requires_review}]\n  {quote['quote']}"
                     full_text = self.wrap_text(quote_text)
                     
                     quote_item.setText(0, full_text)

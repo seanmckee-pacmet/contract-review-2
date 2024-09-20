@@ -122,7 +122,8 @@ def review_documents(file_paths: List[str], company_name: str) -> Dict[str, Any]
                 {{
                     "quote": "Concise, relevant excerpt from the text",
                     "document_type": "Type of document containing the quote",
-                    "header": "Header of the document containing the quote"
+                    "header": "Header of the document containing the quote",
+                    "requires_human_review": "Yes" or "No"  // Change this line
                 }},
                 // Include a second quote ONLY if absolutely necessary
             ]
@@ -135,7 +136,7 @@ def review_documents(file_paths: List[str], company_name: str) -> Dict[str, Any]
         - Use ellipsis (...) to indicate omitted text at the beginning or end of a quote if necessary.
         - Ensure compliance-related mandates from documents like **Terms and Conditions** or other regulatory references are treated as clause invocations.
 
-        Please analyze the given information thoroughly and provide your response in the specified JSON format, ensuring a focused evaluation of clause invocation with minimal, highly relevant, and concise quotes.
+        Please analyze the given information thoroughly and provide your response in the specified JSON format, ensuring a focused evaluation of clause invocation with minimal, highly relevant, and concise quotes, including whether each quote requires human review.
         """
         
         prompts.append(prompt)
