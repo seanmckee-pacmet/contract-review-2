@@ -89,14 +89,17 @@ def get_ai_response(client: QdrantClient, collection_name: str, query: str, max_
     # Prepare the prompt for OpenAI
     prompt = f"Context:\n{context}\n\nQuery: {query}\n\nAnswer:"
 
+
     # Get response from OpenAI
     response = openai_client.chat.completions.create(
         model="gpt-4o-2024-08-06",
         messages=[
-            {"role": "system", "content": "You are a helpful assistant. Provide a concise answer based on the given context."},
+            {"role": "system", "content": "You are a helpful assistant who is an expert in contract law and aerospace engineering." 
+             "Provide a concise answer to the query based on the given context. "
+             "Please provide quotes from the context that support your answer only if absolutely necessary and make sure to shorten the quotes as much as possible."},
             {"role": "user", "content": prompt}
         ],
-        max_tokens=max_tokens,
+        # max_tokens=max_tokens,
         temperature=0,
     )
 

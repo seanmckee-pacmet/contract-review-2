@@ -21,7 +21,6 @@ Thumbs.db
 # Project specific
 data/
 *.pdf
-notable_clauses.json
 
 # Logs
 *.log

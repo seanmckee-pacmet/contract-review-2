@@ -1,0 +1,150 @@
+{
+    "DFAR(S)": {
+        "Description": "Compliance with DFARS regulations, including the Berry Amendment. Requires specialty metals to be melted in the U.S. or qualifying countries, with mandatory certifications on government contracts and commercial items.",
+        "Examples": [
+            "Any specialty metals incorporated in articles delivered under this order must be melted in the United States, its possession or in a qualifying country as defined in the DFARS 252.225-7009.",
+            "DFARS 252.225-7016 applies.",
+            "DFARS compliance statement must be stated on the manufacturer’s certificate of conformance.",
+            "Vendor further agrees to comply with all provisions of the Federal Acquisition Regulation ('FAR'), Department of Defense FAR Supplement ('DFARS').",
+            "A statement of 'conformity per DFAR 252.225-7009' on the Certificate of Compliance or associated paperwork."
+        ]
+    },
+    "REACH Compliance": {
+        "Description": "Adherence to REACH regulations, especially for aerospace materials, requiring reporting and communication of Substances of Very High Concern (SVHC) when thresholds exceed 0.1%.",
+        "Examples": [
+            "As a supplier, you must ensure any 'article' under REACH contains less than 0.1% by weight of any SVHC.",
+            "If thresholds exceed 0.1%, communicate the identity of each SVHC present to the buyer.",
+            "Suppliers must ensure REACH compliance documentation is passed along for all applicable materials."
+        ]
+    },
+    "RoHS Compliance": {
+        "Description": "Compliance with RoHS directives restricting the use of hazardous substances in aerospace components and electronic equipment, such as lead, mercury, and cadmium, with mandatory declarations of conformity.",
+        "Examples": [
+            "All products must comply with RoHS directives regarding the absence of lead, mercury, and cadmium.",
+            "Ensure that declarations of conformity are provided for all electronic equipment.",
+            "Products should be labeled RoHS-compliant if they meet the directive's restrictions on hazardous substances."
+        ]
+    },
+    "Proposition 65 Compliance": {
+        "Description": "Requirement under California's Proposition 65 for warnings related to exposure to chemicals in aerospace products that may cause cancer or reproductive harm, with clear labeling and notifications.",
+        "Examples": [
+            "Supplier must provide Proposition 65 warnings for all products containing chemicals that pose cancer or reproductive harm risks.",
+            "Ensure that labeling is clear and follows Proposition 65 guidelines for aerospace parts.",
+            "Notify the buyer of any chemicals listed under Proposition 65 used in manufacturing."
+        ]
+    },
+    "Conflict Minerals": {
+        "Description": "Regulations under the Dodd-Frank Act requiring responsible sourcing of tin, tantalum, tungsten, and gold (3TG), with annual reports on conflict-free status, especially for suppliers in conflict-affected regions.",
+        "Examples": [
+            "Suppliers must disclose the sourcing of any tin, tantalum, tungsten, and gold (3TG) used in products.",
+            "Provide an annual conflict minerals report outlining the sourcing status of 3TG minerals.",
+            "Ensure all products containing 3TG comply with conflict-free sourcing standards."
+        ]
+    },
+    "Ozone-Depleting Chemicals": {
+        "Description": "Restrictions or prohibitions on the use of Class 1 and Class 2 ozone-depleting chemicals in manufacturing aerospace parts, with certifications of compliance where applicable.",
+        "Examples": [
+            "Ensure that no Class 1 or Class 2 ozone-depleting chemicals are used in manufacturing.",
+            "Certify compliance with regulations prohibiting the use of ozone-depleting substances in aerospace parts.",
+            "Provide a statement of conformity for any ozone-depleting chemicals present in products."
+        ]
+    },
+    "Mercury-Free Requirements": {
+        "Description": "Mandatory requirement to eliminate the use of mercury in all aerospace products, components, and manufacturing processes, with documentation verifying mercury-free content.",
+        "Examples": [
+            "Supplier must certify that no mercury is used in the manufacturing of aerospace components.",
+            "Provide documentation verifying that all products and processes are mercury-free.",
+            "Ensure that mercury-free requirements are passed down to sub-tier suppliers."
+        ]
+    },
+    "Country of Origin (COO)": {
+        "Description": "Requirement to track, declare, and provide certificates of origin for aerospace materials, ensuring traceability and compliance with country-of-origin regulations. Includes notification for any changes in sourcing.",
+        "Examples": [
+            "Supplier must provide a certificate of origin for all aerospace materials.",
+            "Notify the buyer of any changes to the country of origin for materials used in production.",
+            "Ensure traceability of materials through documented country-of-origin certificates."
+        ]
+    },
+    "First Article Inspection (FAI) Requirements": {
+        "Description": "Mandatory First Article Inspection (FAI) for aerospace parts, requiring submission of First Article Inspection Reports (FAIR) to validate conformity to technical specifications after production lapses or for critical components.",
+        "Examples": [
+            "Submit First Article Inspection Reports (FAIR) after production of critical components.",
+            "FAIRs must be submitted using the electronic on-line FAIR system Net-Inspect",
+            "The supplier will prepare a formal FAIR for detail part, sub-assembly, and assembly in accordance with the latest issue and revision of the AS9102 process and report requirement standard."
+        ]
+    },
+    "Source Inspection": {
+        "Description": "Requirement for the buyer or a third party to perform source inspections at the supplier's facility, including access to production and quality records to verify compliance with aerospace standards.",
+        "Examples": [
+            "Allow the buyer to conduct source inspections at the manufacturing facility.",
+            "Provide access to production and quality records during source inspections.",
+            "Ensure that all parts are inspected at the source for compliance with aerospace standards."
+        ]
+    },
+    "Certificate of Conformance": {
+        "Description": "Requirement for a Certificate of Conformance (CofC) to accompany aerospace parts, certifying that they meet all specified contractual and technical requirements, including traceability to purchase orders, lot numbers, and materials.",
+        "Examples": [
+            "A Certificate of Conformance (CofC) must be included with every shipment of aerospace parts.",
+            "Ensure traceability through CofC, which includes references to purchase orders and lot numbers.",
+            "Provide detailed CofC documentation that certifies compliance with contractual requirements."
+        ]
+    },
+    "Shelf Life Requirements": {
+        "Description": "Requirement for delivered aerospace products to meet specified shelf life minimums, typically a certain percentage of remaining useful life at the time of delivery (e.g., 70-95%). Also includes special handling and storage conditions to preserve shelf life.",
+        "Examples": [
+            "Products must have at least 75% of their shelf life remaining upon delivery.",
+            "Ensure that handling and storage instructions are followed to maintain shelf life requirements.",
+            "Provide documentation verifying that delivered products meet shelf life minimums."
+        ]
+    },
+    "Approved Supplier List": {
+        "Description": "Obligation to source aerospace materials from an Approved Supplier List (ASL) maintained by the buyer, ensuring that all suppliers meet predefined quality and compliance standards.",
+        "Examples": [
+            "All materials must be sourced from the buyer’s Approved Supplier List (ASL).",
+            "Suppliers not on the ASL must be approved by the buyer before sourcing.",
+            "Ensure compliance with the ASL requirements for all purchased aerospace materials."
+        ]
+    },
+    "Flow Down to Sub-Tier Suppliers": {
+        "Description": "Requirement to pass down all contractual, regulatory, and quality obligations to sub-tier suppliers in the aerospace supply chain, ensuring full compliance at all levels of production.",
+        "Examples": [
+            "All contractual requirements must be flowed down to sub-tier suppliers.",
+            "Ensure that sub-tier suppliers comply with the buyer’s quality standards and regulations.",
+            "Provide documentation confirming that flow-down requirements have been met."
+        ]
+    },
+    "Subcontracting": {
+        "Description": "No subcontracting without prior written approval or consent from buyer.",
+        "Examples": [
+            "Supplier may not subcontract any portion of the contract without buyer approval.",
+            "Obtain written consent from the buyer before engaging in subcontracting activities.",
+            "Provide documentation of subcontracting approvals, if applicable."
+        ]
+    },
+    "Shipping and Packaging": {
+        "Description": "Requirements for labeling, weight, size limits, packaging materials, and handling instructions to ensure safe transit and regulatory compliance.",
+        "Examples": [
+            "Ensure that all packages are labeled with weight, dimensions, and handling instructions.",
+            "Follow buyer-specified packaging materials to ensure safe transit.",
+            "Provide documentation detailing the packaging requirements and regulatory compliance."
+        ]
+    },
+    "EASA Compliance": {
+        "Description": "Compliance with European Union Aviation Safety Agency (EASA) regulations for aerospace products, ensuring conformity to airworthiness and safety standards within the EU. This includes certification of parts, components, and systems used in civil aviation.",
+        "Examples": [
+            "Supplier must ensure that all products comply with EASA Part 21 requirements for airworthiness.",
+            "Provide EASA Form 1 certification for all parts and components delivered to the buyer.",
+            "Ensure that aerospace products meet the safety and quality standards set by EASA for use in civil aviation."
+        ]
+    },
+
+    "Hazardous Materials": {
+        "Description": "Specific chemicals that may not be present in the aerospace parts or components.",
+        "Examples": [
+            "Ensure that all hazardous materials are properly labeled, packaged, and transported in compliance with HMR and ICAO regulations.",
+            "Provide documentation verifying that hazardous materials are transported in compliance with all applicable regulations.",
+            "Notify the buyer of any hazardous materials used in manufacturing and ensure compliance with all applicable regulations.",
+            "Specific chemicals"
+        ]
+    }
+}
