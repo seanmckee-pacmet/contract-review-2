@@ -9,6 +9,15 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from openai import OpenAI
 import tiktoken
 
+from supabase import create_client
+import dotenv
+
+dotenv.load_dotenv()
+
+def initialize_supabase():
+    supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+    return supabase
+
 
 openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 embedding_model_name = "text-embedding-3-small"
@@ -27,16 +36,6 @@ def initialize_qdrant(collection_name: str, vector_size: int):
         )
     return client
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
-def upsert_with_retry(client, collection_name, batch):
-    try:
-        client.upsert(
-            collection_name=collection_name,
-            points=batch
-        )
-    except Exception as e:
-        print(f"Error during upsert: {str(e)}")
-        raise
 
 def store_embeddings_in_qdrant(client: QdrantClient, collection_name: str, chunks: List[Dict], embeddings: List[List[float]]):
     points = []
