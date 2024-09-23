@@ -12,7 +12,7 @@ from openai import OpenAI
 
 openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-def review_documents(file_paths: List[str], company_name: str) -> Dict[str, Any]:
+def review_documents(file_paths: List[str], company_name: str, selected_documents: List[str]) -> Dict[str, Any]:
     print(f"Clause Analysis for {company_name}\n")
 
     print(f"[DEBUG] Starting review for company: {company_name}")
@@ -66,6 +66,7 @@ def review_documents(file_paths: List[str], company_name: str) -> Dict[str, Any]
         
         clause_results = query_qdrant_for_clauses(qdrant_client, collection_name, clause_id, clause_info['Description'])
         print(f"DEBUG: Clause results: {clause_results}")
+
         print(f"Found {len(clause_results)} relevant text chunks for clause: {clause_id}")
         
         prompt = f"""

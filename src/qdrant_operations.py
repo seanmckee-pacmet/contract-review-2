@@ -1,10 +1,14 @@
 from qdrant_client import QdrantClient
 from qdrant_client.models import VectorParams, Distance, PointStruct
+from qdrant_client import models
+
+from src.document_processing import process_document
 import os
 from typing import List, Dict
 from tenacity import retry, stop_after_attempt, wait_exponential
 from openai import OpenAI
 import tiktoken
+
 
 openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 embedding_model_name = "text-embedding-3-small"
@@ -104,3 +108,86 @@ def get_ai_response(client: QdrantClient, collection_name: str, query: str, max_
     )
 
     return response.choices[0].message.content.strip()
+
+
+def store_document_in_qdrant(client: QdrantClient, company_name: str, file_path: str):
+    collection_name = company_name
+    
+    # Process the document
+    _, doc_type, chunks, embeddings, _ = process_document(file_path)
+    
+    # Ensure the collection exists
+    try:
+        client.get_collection(collection_name)
+    except:
+        client.create_collection(
+            collection_name=collection_name,
+            vectors_config=models.VectorParams(size=len(embeddings[0]), distance=models.Distance.COSINE)
+        )
+    
+    # Store the document chunks
+    client.upsert(
+        collection_name=collection_name,
+        points=[
+            models.PointStruct(
+                id=str(i),
+                vector=embedding,
+                payload={
+                    "text": chunk["page_content"],
+                    "metadata": chunk["metadata"],
+                    "document_name": os.path.basename(file_path),
+                    "document_type": doc_type
+                }
+            ) for i, (chunk, embedding) in enumerate(zip(chunks, embeddings))
+        ]
+    )
+
+def get_company_documents(client: QdrantClient, company_name: str) -> List[str]:
+    collection_name = company_name
+    
+    try:
+        # Fetch all points in the collection
+        response = client.scroll(
+            collection_name=collection_name,
+            limit=10000,  # Adjust this value based on your expected maximum number of documents
+            with_payload=True,
+            with_vectors=False
+        )
+        
+        # Extract unique document names
+        document_names = set(point.payload.get("document_name") for point in response[0])
+        return list(document_names)
+    except Exception as e:
+        print(f"Error fetching documents for {company_name}: {str(e)}")
+        return []
+
+def remove_document_from_qdrant(client: QdrantClient, company_name: str, document_name: str):
+    collection_name = company_name
+    
+    try:
+        # Find all points with the given document name
+        response = client.scroll(
+            collection_name=collection_name,
+            limit=10000,
+            with_payload=True,
+            with_vectors=False,
+            filter=models.Filter(
+                must=[
+                    models.FieldCondition(
+                        key="document_name",
+                        match=models.MatchValue(value=document_name)
+                    )
+                ]
+            )
+        )
+        
+        # Extract the IDs of the points to remove
+        point_ids = [point.id for point in response[0]]
+        
+        # Remove the points
+        client.delete(
+            collection_name=collection_name,
+            points_selector=models.PointIdsList(points=point_ids)
+        )
+    except Exception as e:
+        print(f"Error removing document {document_name} for {company_name}: {str(e)}")

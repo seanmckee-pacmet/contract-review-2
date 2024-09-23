@@ -4,6 +4,7 @@ from PyQt5.QtGui import QPalette, QColor
 from .main_window import MainWindow
 from .po_extractor import POExtractorTab
 from .chat_window import ChatWindow
+from .document_manager import DocumentManagerTab
 
 class StylishTabWidget(QTabWidget):
     def __init__(self, parent=None):
@@ -61,6 +62,7 @@ class TabbedInterface(QMainWindow):
         layout.addWidget(self.tab_widget)
         
         # Add tabs
+        self.tab_widget.addTab(DocumentManagerTab(), "Document Manager")
         self.tab_widget.addTab(MainWindow(), "Main")
         self.tab_widget.addTab(ChatWindow(), "Chat")
         self.tab_widget.addTab(POExtractorTab(), "PO Extractor")
